@@ -1,0 +1,32 @@
+# Builds Ricochet.app for a pushed tag, turns it into a .dmg, and attaches it to the release from release.yaml.
+# The Apple Silicon agent runs the `local` backend, so `image` names the shell and there are no containers.
+clone:
+  git:
+    image: codefloe.com/crow-plugins/clone:1.2.2
+    settings:
+      tags: true
+
+when:
+  - event: tag
+
+depends_on:
+  - release
+
+labels:
+  platform: darwin/arm64
+
+steps:
+  'Build and attach the .dmg':
+    image: bash
+    environment:
+      DEVELOPER_DIR: /Library/Developer/CommandLineTools
+      GITHUB_TOKEN:
+        from_secret: ricochet_issue_token
+    commands:
+      - |
+        set -euo pipefail
+        command -v gh > /dev/null || { echo "ERROR: gh is missing on this agent; install it with brew install gh"; exit 1; }
+        VERSION="${CI_COMMIT_TAG#v}"
+        just dmg "$VERSION"
+        # --clobber replaces the asset a previous run of this tag uploaded.
+        gh release upload "$CI_COMMIT_TAG" "dist/ricochet-$VERSION.dmg" --repo ricochet-rs/ricochet-mac --clobber

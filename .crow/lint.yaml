@@ -1,0 +1,13 @@
+# A pull request's title becomes its squash-merge subject, which git-sv reads to choose the next version.
+when:
+  - event: pull_request
+  - event: pull_request_edited
+
+labels:
+  agent: thumper
+
+steps:
+  commitlint:
+    image: reg.ricochet.rs/docker.io/commitlint/commitlint:21.2.3
+    commands:
+      - echo $${CI_COMMIT_PULL_REQUEST_TITLE} | commitlint

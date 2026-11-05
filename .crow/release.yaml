@@ -1,0 +1,48 @@
+# Publishes the GitHub release for a pushed tag, with notes git-sv writes from the commits since the previous tag.
+# dmg.yaml waits for this workflow, because `gh release upload` needs the release to exist.
+clone:
+  git:
+    image: codefloe.com/crow-plugins/clone:1.2.2
+    settings:
+      tags: true
+
+when:
+  - event: tag
+
+labels:
+  agent: thumper
+
+steps:
+  'Generate release notes':
+    image: reg.ricochet.rs/docker.io/thegeeklab/git-sv:3.0.6
+    commands:
+      - apk add --no-cache -q sed
+      - git sv current-version
+      - git sv release-notes -t ${CI_COMMIT_TAG} -o CHANGELOG.md
+      - sed -i '1,2d' CHANGELOG.md # remove version
+      - cat CHANGELOG.md
+
+  'Publish GitHub release':
+    image: reg.ricochet.rs/docker.io/library/alpine:3.24
+    depends_on:
+      - 'Generate release notes'
+    environment:
+      GITHUB_TOKEN:
+        from_secret: ricochet_issue_token
+    commands:
+      - apk add -q --no-cache github-cli
+      - |
+        set -euxo pipefail
+        # A restarted run finds the release it already created and only refreshes its notes.
+        if gh release view "$CI_COMMIT_TAG" --repo ricochet-rs/ricochet-mac > /dev/null 2>&1; then
+          gh release edit "$CI_COMMIT_TAG" \
+            --repo ricochet-rs/ricochet-mac \
+            --title "$CI_COMMIT_TAG" \
+            --notes-file CHANGELOG.md
+        else
+          gh release create "$CI_COMMIT_TAG" \
+            --repo ricochet-rs/ricochet-mac \
+            --title "$CI_COMMIT_TAG" \
+            --notes-file CHANGELOG.md \
+            --verify-tag
+        fi

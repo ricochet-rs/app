@@ -1,0 +1,23 @@
+# The Apple Silicon agent runs the `local` backend, so `image` names the shell and there are no containers.
+clone:
+  git:
+    image: codefloe.com/crow-plugins/clone:1.2.2
+
+when:
+  - event: pull_request
+  - event: push
+    branch:
+      - ${CI_REPO_DEFAULT_BRANCH}
+
+labels:
+  platform: darwin/arm64
+
+steps:
+  test:
+    image: bash
+    environment:
+      # The Command Line Tools ship the SwiftUI SDK and Swift Testing, so the agent needs no Xcode.
+      DEVELOPER_DIR: /Library/Developer/CommandLineTools
+    commands:
+      - swift build
+      - just test
