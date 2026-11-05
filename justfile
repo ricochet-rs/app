@@ -10,6 +10,14 @@ run: app
 build:
     swift build -c release --arch arm64
 
+# Format the Swift sources in place with swift-format
+fmt:
+    swift format --in-place --recursive --parallel Sources Tests Package.swift
+
+# Fail on any change swift-format would make
+lint:
+    swift format lint --strict --recursive --parallel Sources Tests Package.swift
+
 # Run the tests, pointing SwiftPM at the Command Line Tools' Swift Testing, which it does not search
 test:
     #!/usr/bin/env bash

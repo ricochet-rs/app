@@ -86,5 +86,7 @@ Put `.textSelection(.enabled)` on every `Text` outside a button, because SwiftUI
 Build a dropdown from `Menu`, never `.popover`, because macOS centres a popover on its trigger with an arrow instead of dropping it from the field's edge.
 Link to a setting rather than nudging people toward it; a public instance is the point of Remote access, so the pane only links to **Require sign-in for every page**.
 Copy colour tokens from ricochet's `ricochet-ui/style/theme.css` as OKLCH triples, and keep every corner square, because that theme sets `--radius: 0rem`.
+Run `just fmt` before every commit, because CI fails on anything `just lint` reports.
+Format with swift-format's defaults and keep no `.swift-format` file.
 Validate with `swift build` and `just test`, which need no Xcode: the Command Line Tools build SwiftUI and ship Swift Testing, though SwiftPM only finds the latter through the paths `just test` passes.
 Run `just icons` after changing `Support/logo.svg` and commit what it renders, because `just app` copies those files and needs no `rsvg-convert`.

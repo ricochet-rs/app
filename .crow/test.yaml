@@ -13,8 +13,17 @@ labels:
   platform: darwin/arm64
 
 steps:
+  format:
+    image: bash
+    depends_on: []
+    environment:
+      DEVELOPER_DIR: /Library/Developer/CommandLineTools
+    commands:
+      - just lint
+
   test:
     image: bash
+    depends_on: []
     environment:
       # The Command Line Tools ship the SwiftUI SDK and Swift Testing, so the agent needs no Xcode.
       DEVELOPER_DIR: /Library/Developer/CommandLineTools
