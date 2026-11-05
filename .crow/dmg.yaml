@@ -29,4 +29,4 @@ steps:
         VERSION="${CI_COMMIT_TAG#v}"
         just dmg "$VERSION"
         # --clobber replaces the asset a previous run of this tag uploaded.
-        gh release upload "$CI_COMMIT_TAG" "dist/ricochet-$VERSION.dmg" --repo ricochet-rs/ricochet-mac --clobber
+        gh release upload "$CI_COMMIT_TAG" "dist/ricochet-$VERSION.dmg" --repo "${CI_REPO}" --clobber
