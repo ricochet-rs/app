@@ -73,7 +73,8 @@ Ricochet installs whichever tarball the app copies, but reinstalls renv only whe
 ## CI
 
 Run git-sv and commitlint on the Linux agent and only Swift builds on the Apple Silicon agent, because that agent runs the `local` backend, where `image` names the shell and containers do not exist.
-Pass `manifest_flags` from the `justfile` to every `swift build` and `swift test`, because the Apple Silicon agent runs each step in a sandbox, where `sandbox-exec` can't nest and root can't write its own module cache, which that agent's compiler, a newer build than its SDK, has to fill.
+Pass `swiftpm_flags` from the `justfile` to every `swift build` and `swift test`, because the Apple Silicon agent runs each step in a sandbox, where `sandbox-exec` can't nest and root can't write its own module cache, which that agent's compiler, a newer build than its SDK, has to fill.
+Keep `--build-system native` in `swiftpm_flags`, because SwiftPM 6.4's default, Swift Build, never loads the `SwiftUIMacros` plugin that `@State` needs in the macOS 27 SDK.
 Keep `dmg.yaml` depending on `release`, because `gh release upload` needs the release `release.yaml` creates.
 Write Crow metadata in brace form (`${CI_COMMIT_TAG}`) and shell-local variables bare or with `$$`, because Crow expands `${...}` before the shell runs, as ricochet's root `CLAUDE.md` explains.
 Make every release step safe to restart: edit the release when it exists, and upload the `.dmg` with `--clobber`.
