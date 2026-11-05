@@ -28,5 +28,5 @@ steps:
       # The Command Line Tools ship the SwiftUI SDK and Swift Testing, so the agent needs no Xcode.
       DEVELOPER_DIR: /Library/Developer/CommandLineTools
     commands:
-      - swift build
+      - just build
       - just test

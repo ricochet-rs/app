@@ -8,7 +8,7 @@ run: app
 
 # Compile the app
 build:
-    swift build -c release --arch arm64
+    swift build -c release --arch arm64 --disable-sandbox
 
 # Format the Swift sources in place with swift-format
 fmt:
@@ -23,7 +23,7 @@ test:
     #!/usr/bin/env bash
     set -euo pipefail
     dev="${DEVELOPER_DIR:-$(xcode-select -p)}/Library/Developer"
-    swift test \
+    swift test --disable-sandbox \
         -Xswiftc -F -Xswiftc "$dev/Frameworks" \
         -Xlinker -F -Xlinker "$dev/Frameworks" \
         -Xlinker -rpath -Xlinker "$dev/Frameworks" \
@@ -36,7 +36,7 @@ app version="0.0.0": build
     app=dist/Ricochet.app
     rm -rf "$app"
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-    cp "$(swift build -c release --arch arm64 --show-bin-path)/Ricochet" "$app/Contents/MacOS/Ricochet"
+    cp "$(swift build -c release --arch arm64 --disable-sandbox --show-bin-path)/Ricochet" "$app/Contents/MacOS/Ricochet"
     sed "s/__VERSION__/{{ version }}/g" Support/Info.plist > "$app/Contents/Info.plist"
     cp Support/AppIcon.icns Support/MenuBarRunning.pdf Support/MenuBarStopped.pdf "$app/Contents/Resources/"
     renv=".build/renv-{{ renv_version }}.tar.gz"
