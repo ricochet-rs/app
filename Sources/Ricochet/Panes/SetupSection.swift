@@ -41,7 +41,7 @@ enum SetupSection: CaseIterable, Identifiable {
     case .users: "Choose the role new people get and how ricochet reads their groups."
     case .email:
       "Ricochet sends email through this mail server, such as notices about failed deployments."
-    case .packages: "Choose where ricochet installs R, Python, and Julia packages from."
+    case .packages: "Choose where ricochet installs R, Julia, and Python packages from."
     case .deployments:
       "Choose how many old deployments ricochet keeps and the largest bundle people can deploy."
     case .tasks: "Choose how long ricochet lets a task or a package install run."

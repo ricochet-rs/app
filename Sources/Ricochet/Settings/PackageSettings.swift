@@ -10,7 +10,7 @@ struct RRepository: Identifiable, Equatable {
   static func == (lhs: Self, rhs: Self) -> Bool { lhs.name == rhs.name && lhs.url == rhs.url }
 }
 
-/// A Python package index or Julia registry URL.
+/// A Julia registry or Python package index URL.
 struct PackageIndex: Identifiable, Equatable {
   let id = UUID()
   var url = ""
@@ -22,8 +22,8 @@ struct PackageIndex: Identifiable, Equatable {
 /// toml++ keeps a table's keys in name order, so ricochet reads the R repositories in name order too.
 struct PackageSettings: Equatable {
   var r = [RRepository]()
-  var python = [PackageIndex]()
   var julia = [PackageIndex]()
+  var python = [PackageIndex]()
   var allowOverrides = true
 }
 
@@ -34,8 +34,8 @@ extension PackageSettings: SettingsSection {
     if let named = repositories?["r"]?.table {
       r = named.keys.map { RRepository(name: $0, url: named[$0]?.string ?? "") }
     }
-    python = repositories?["python"]?.array?.map { PackageIndex(url: $0.string ?? "") } ?? []
     julia = repositories?["julia"]?.array?.map { PackageIndex(url: $0.string ?? "") } ?? []
+    python = repositories?["python"]?.array?.map { PackageIndex(url: $0.string ?? "") } ?? []
     allowOverrides = repositories?["allow_overrides"]?.bool ?? true
   }
 
@@ -44,8 +44,8 @@ extension PackageSettings: SettingsSection {
     let named = TOMLTable()
     for repository in r { named[repository.name.trimmed] = repository.url.trimmed }
     repositories.set("r", named.isEmpty ? nil : named)
-    repositories.set("python", python.isEmpty ? nil : python.map(\.url.trimmed))
     repositories.set("julia", julia.isEmpty ? nil : julia.map(\.url.trimmed))
+    repositories.set("python", python.isEmpty ? nil : python.map(\.url.trimmed))
     repositories.set("allow_overrides", allowOverrides ? nil : false)
     table.removeIfEmpty("repositories")
   }
@@ -57,7 +57,7 @@ extension PackageSettings: SettingsSection {
     if Set(r.map(\.name.trimmed)).count != r.count {
       return "Give each R repository a different name."
     }
-    let urls = r.map(\.url) + python.map(\.url) + julia.map(\.url)
+    let urls = r.map(\.url) + julia.map(\.url) + python.map(\.url)
     if urls.contains(where: { !$0.isHTTPURL }) {
       return "Start every repository URL with https://."
     }

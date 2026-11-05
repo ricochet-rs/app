@@ -19,15 +19,15 @@ struct PackagesPane: View {
             .buttonStyle(.basecoat(.outline, small: true))
         }
       }
-      Field("Python indexes") {
-        IndexList(
-          entries: $settings.python, prompt: "https://pypi.org/simple", addTitle: "Add Python index"
-        )
-      }
       Field("Julia registries") {
         IndexList(
           entries: $settings.julia, prompt: "https://github.com/JuliaRegistries/General.git",
           addTitle: "Add Julia registry")
+      }
+      Field("Python indexes") {
+        IndexList(
+          entries: $settings.python, prompt: "https://pypi.org/simple", addTitle: "Add Python index"
+        )
       }
       ToggleField(
         "Let developers choose their own", isOn: $settings.allowOverrides,
