@@ -1,8 +1,8 @@
 # Keep equal to RENV_VERSION in ricochet's utils/vendor-versions.sh.
 renv_version := "108c2445fa9691d9695f1a139dad91971c9952cb"
 
-# Compile Package.swift against a module cache in .build, because root on the Crow Mac agent can't write its own.
-manifest_flags := '-Xbuild-tools-swiftc -module-cache-path -Xbuild-tools-swiftc "' + justfile_directory() + '/.build/ModuleCache"'
+# Load Package.swift unsandboxed and against a module cache in .build, because the Crow Mac agent's own sandbox blocks both.
+manifest_flags := '--disable-sandbox -Xbuild-tools-swiftc -module-cache-path -Xbuild-tools-swiftc "' + justfile_directory() + '/.build/ModuleCache"'
 
 # Build dist/Ricochet.app and open it, quitting the copy already running
 run: app
