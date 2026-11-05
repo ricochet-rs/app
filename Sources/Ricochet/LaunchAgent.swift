@@ -7,7 +7,6 @@ struct LaunchAgent {
   let errorLog: URL
 
   static let server = LaunchAgent(label: "rs.ricochet.server", errorLog: Paths.stderr)
-  static let tunnel = LaunchAgent(label: "rs.ricochet.tunnel", errorLog: Paths.cloudflaredLog)
 
   var plist: URL { Paths.userHome.appending(path: "Library/LaunchAgents/\(label).plist") }
   private var domain: String { "gui/\(getuid())" }

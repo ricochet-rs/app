@@ -3,6 +3,8 @@ import SwiftUI
 struct ServerPane: View {
   @Binding var settings: ServerSettings
   let localURL: String
+  /// Whether managed auth holds the port at the one its redirect URL allows.
+  let portLocked: Bool
   let isInstalled: Bool
   let install: () -> Void
   let uninstall: () -> Void
@@ -11,7 +13,12 @@ struct ServerPane: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       InputField(
-        "Port", text: $settings.port, description: "On this Mac, ricochet answers at \(localURL).")
+        "Port", text: $settings.port,
+        description: portLocked
+          ? "Configure your own identity provider to change the port."
+          : "On this Mac, ricochet answers at \(localURL)."
+      )
+      .disabled(portLocked)
       InputField(
         "License key", text: $settings.licenseKey,
         description: "Leave this empty to use the Community Edition.")

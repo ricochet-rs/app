@@ -17,11 +17,9 @@ private func save(_ config: ServerConfig, over existing: String) throws -> TOMLT
 
 @Test func savingKeepsSettingsTheFormDoesNotManage() throws {
   var config = ServerConfig()
-  config.signIn.issuerURL = "https://auth.example.com"
-  config.signIn.clientID = "ricochet"
-  config.signIn.clientSecret = #"a "quoted" \secret"#
-  config.remoteAccess = RemoteAccessSettings(
-    mode: .custom, customURL: "https://ricochet.example.com")
+  config.authentication = AuthenticationSettings(
+    managed: false, issuerURL: "https://auth.example.com", clientID: "ricochet",
+    clientSecret: #"a "quoted" \secret"#)
 
   let saved = try save(
     config,
@@ -43,14 +41,12 @@ private func save(_ config: ServerConfig, over existing: String) throws -> TOMLT
 
 @Test func everyPaneRoundTrips() throws {
   let config = ServerConfig(
-    signIn: SignInSettings(
-      provider: .entra, issuerURL: "https://login.microsoftonline.com/tenant/v2.0", clientID: "id",
-      clientSecret: "secret"),
+    authentication: AuthenticationSettings(
+      managed: false, provider: .entra,
+      issuerURL: "https://login.microsoftonline.com/tenant/v2.0", clientID: "id",
+      clientSecret: "secret", displayNameClaim: "name", groupsClaim: "groups", syncInterval: "30"),
     server: ServerSettings(port: "7000", licenseKey: "KEY"),
-    users: UserSettings(
-      defaultRole: .consumer, requireSignIn: true, allowAvatarUpload: false,
-      displayNameClaim: "name",
-      groupsClaim: "groups", syncInterval: "30"),
+    users: UserSettings(defaultRole: .consumer, requireSignIn: true, allowAvatarUpload: false),
     email: EmailSettings(
       enabled: true, host: "smtp.example.com", port: "2525", encryption: .tls, username: "user",
       password: "password", from: "ricochet <ricochet@example.com>", replyTo: "help@example.com"),
@@ -67,8 +63,7 @@ private func save(_ config: ServerConfig, over existing: String) throws -> TOMLT
     logging: LoggingSettings(
       level: .debug, rotation: .hourly, compress: false, maxFiles: "10", maxAgeDays: "14"),
     auditLog: AuditLogSettings(keepForever: true, retentionDays: "", writeFile: true),
-    telemetry: TelemetrySettings(enabled: true, endpoint: "http://localhost:4317"),
-    remoteAccess: RemoteAccessSettings(mode: .custom, customURL: "https://ricochet.example.com"))
+    telemetry: TelemetrySettings(enabled: true, endpoint: "http://localhost:4317"))
 
   let saved = try save(config, over: "")
 
@@ -77,18 +72,52 @@ private func save(_ config: ServerConfig, over existing: String) throws -> TOMLT
   #expect(ServerConfig(table: saved) == config)
 }
 
-@Test func defaultsWriteOnlyTheRequiredKeys() throws {
-  var config = ServerConfig()
-  config.signIn.issuerURL = "https://auth.example.com"
-  config.signIn.clientID = "ricochet"
-
-  let saved = try save(config, over: "[otel]\nendpoint = \"http://localhost:4317\"\n")
+@Test func defaultsWriteOnlyManagedAuthAndTheRequiredKeys() throws {
+  let saved = try save(ServerConfig(), over: "[otel]\nendpoint = \"http://localhost:4317\"\n")
 
   #expect(Set(saved.keys) == ["home", "url", "auth", "logs", "network"])
   #expect(Set(saved["auth"]?.table?.keys ?? []) == ["default_role", "oidc"])
+  let oidc = saved["auth"]?.table?["oidc"]?.table
+  #expect(Set(oidc?.keys ?? []) == ["provider", "issuer_url", "client_id"])
+  #expect(oidc?["issuer_url"]?.string == "https://idp.ricochet.rs")
+  #expect(oidc?["client_id"]?.string == "398284990531538194")
+  #expect(Set(saved["logs"]?.table?.keys ?? []) == ["file_logging"])
+  #expect(ServerConfig(table: saved) == ServerConfig())
+}
+
+@Test func savedInternalPortsAreKept() throws {
+  let network = try TOMLTable(
+    string: "api_port = 4321\nreload_port = 4322\nmetrics = \"127.0.0.1:4323\"")
+  let ports = NetworkPorts(proxy: 6188, keeping: network)
+  #expect([ports.api, ports.reload, ports.metrics] == [4321, 4322, 4323])
+}
+
+@Test func switchingToManagedAuthRemovesYourProvidersKeys() throws {
+  let saved = try save(
+    ServerConfig(),
+    over: """
+      [auth.oidc]
+      issuer_url = "https://auth.example.com"
+      client_id = "ricochet"
+      client_secret = "secret"
+      groups_claim = "groups"
+      sync_interval = 30
+      """)
+
   #expect(
     Set(saved["auth"]?.table?["oidc"]?.table?.keys ?? []) == [
       "provider", "issuer_url", "client_id",
     ])
-  #expect(Set(saved["logs"]?.table?.keys ?? []) == ["file_logging"])
+}
+
+@Test func aSecretMeansYourOwnProviderEvenAtTheManagedIssuer() throws {
+  let table = try TOMLTable(
+    string: """
+      [auth.oidc]
+      issuer_url = "https://idp.ricochet.rs"
+      client_id = "398284990531538194"
+      client_secret = "secret"
+      """)
+
+  #expect(!AuthenticationSettings(table: table).managed)
 }

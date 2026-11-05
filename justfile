@@ -4,9 +4,16 @@ renv_version := "108c2445fa9691d9695f1a139dad91971c9952cb"
 # Load Package.swift unsandboxed and against a module cache in .build, because the Crow Mac agent's own sandbox blocks both.
 manifest_flags := '--disable-sandbox -Xbuild-tools-swiftc -module-cache-path -Xbuild-tools-swiftc "' + justfile_directory() + '/.build/ModuleCache"'
 
+developer_dir := env("DEVELOPER_DIR", `xcode-select -p`)
+
+# The Command Line Tools 27 lack the SwiftUIMacros plugin that `@State` needs in the macOS 27 SDK, so build against 26.
+export SDKROOT := developer_dir + "/SDKs/MacOSX26.sdk"
+
 # Build dist/Ricochet.app and open it, quitting the copy already running
 run: app
     -pkill -x Ricochet
+    # `open` fails with -600 while the old copy is still quitting.
+    while pgrep -x Ricochet > /dev/null; do sleep 0.1; done
     open dist/Ricochet.app
 
 # Compile the app
@@ -21,12 +28,13 @@ fmt:
 lint:
     swift format lint --strict --recursive --parallel Sources Tests Package.swift
 
-# Run the tests, pointing SwiftPM at the Command Line Tools' Swift Testing, which it does not search
+# Run the tests, pointing SwiftPM at the Command Line Tools' Swift Testing and its macros, which it does not search
 test:
     #!/usr/bin/env bash
     set -euo pipefail
-    dev="${DEVELOPER_DIR:-$(xcode-select -p)}/Library/Developer"
+    dev="{{ developer_dir }}/Library/Developer"
     swift test {{ manifest_flags }} \
+        -Xswiftc -plugin-path -Xswiftc "{{ developer_dir }}/usr/lib/swift/host/plugins/testing" \
         -Xswiftc -F -Xswiftc "$dev/Frameworks" \
         -Xlinker -F -Xlinker "$dev/Frameworks" \
         -Xlinker -rpath -Xlinker "$dev/Frameworks" \

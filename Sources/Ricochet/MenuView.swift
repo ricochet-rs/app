@@ -20,24 +20,6 @@ struct MenuView: View {
       }
       .padding(16)
 
-      if let publicURL = server.publicURL {
-        HStack(spacing: 8) {
-          Circle()
-            .fill(publicColor)
-            .frame(width: 6, height: 6)
-          Text(publicURL.host() ?? publicURL.absoluteString)
-            .lineLimit(1)
-            .truncationMode(.middle)
-          Spacer()
-          Text(publicLabel)
-            .foregroundStyle(Theme.mutedForeground)
-        }
-        .font(.system(size: 12))
-        .foregroundStyle(Theme.foreground)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
-      }
-
       Rectangle().fill(Theme.border).frame(height: 1)
 
       VStack(alignment: .leading, spacing: 12) {
@@ -140,22 +122,6 @@ struct MenuView: View {
     case .running: Theme.success
     case .starting: Theme.warning
     case .stopped, .notInstalled: Theme.mutedForeground
-    }
-  }
-
-  private var publicLabel: String {
-    switch server.publicReachable {
-    case true?: "Reachable"
-    case false?: "Not reachable"
-    case nil: "Checking"
-    }
-  }
-
-  private var publicColor: Color {
-    switch server.publicReachable {
-    case true?: Theme.success
-    case false?: Theme.destructive
-    case nil: Theme.mutedForeground
     }
   }
 

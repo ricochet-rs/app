@@ -13,11 +13,8 @@ enum Paths {
   /// `HOME` for ricochet-server and its content, inside the one folder the sandbox lets them write.
   static let sandboxHome = home.appending(path: "home")
 
-  /// The app's own settings and the tunnel token, outside every folder the sandbox lets content read.
+  /// The app's own files, outside every folder the sandbox lets content read.
   static let appSupport = userHome.appending(path: "Library/Application Support/Ricochet")
-  static let cloudflared = userHome.appending(path: ".local/bin/cloudflared")
-  static let cloudflaredToken = appSupport.appending(path: RemoteAccessSettings.tokenFileName)
-  static let cloudflaredLog = appSupport.appending(path: "cloudflared.log")
   /// Every failure the app showed, with the step it was on, so a cut-off message can still be read.
   static let appLog = appSupport.appending(path: "ricochet-app.log")
 }

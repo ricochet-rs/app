@@ -34,13 +34,19 @@ Keep the ports already saved in `[network]` instead of probing again, so a save 
 
 ## Configuration
 
-`ricochet-config.toml` is the only store of the setup form's answers, except remote access: `RemoteAccessSettings` lives in `~/Library/Application Support/Ricochet/`, because ricochet reads only the `url` it produces.
+`ricochet-config.toml` is the only store of the setup form's answers.
 Read and write it only through TOMLKit's `TOMLTable`, never by parsing or assembling TOML text.
 Give each config section a `SettingsSection` in `Sources/Ricochet/Settings/`, a pane in `Sources/Ricochet/Panes/` and a `SetupSection` case, and list it in `ServerConfig.sections` and `ServerConfig.init(table:)`.
 Write a key only when it differs from ricochet's default, so a later ricochet default still applies; `auth.default_role` is the exception, because ricochet warns at every sign-in without it.
 Edit a section through `TOMLTable.section`, because assigning a table copies it, so edits made to that Swift object afterwards never reach the document.
 Fill a new table key by key rather than with `TOMLTable(dictionary)`, which resolves to TOMLKit's throwing `Encodable` initializer.
 toml++ keeps a table's keys in name order, so the R repositories reach ricochet sorted by name whatever order they were typed in.
+
+## Authentication
+
+Hold the port at 6188 under managed auth, because Zitadel accepts only `http://localhost:6188/oauth/callback` as the redirect for the Web app in `AuthenticationSettings.managedProvider`.
+Warn whenever the form changes the issuer, because ricochet keys each user by the bare OIDC `sub` and gives everyone who signs in through a new identity provider a new account with the default role.
+Read and change people with `ricochet-server user --config <file>`, which the app can run beside the server because ricochet writes SQLite directly, and expect `list` to print `No users found.` instead of JSON when nobody has signed in.
 
 ## Sandbox
 
@@ -49,15 +55,6 @@ Never let the profile write `~/Library/LaunchAgents` or `~/.local/bin`, because 
 Pass folders to the profile as `-D` parameters rather than writing them into its text, so a path never needs SBPL escaping.
 Deny `file-read-data` under `/Users`, never `file-read*`, because R and Python resolve a path by reading the metadata of every parent folder.
 Set `HOME` inside ricochet's folder, and point `JULIAUP_DEPOT_PATH` and `UV_PYTHON_INSTALL_DIR` at the real ones, because the server finds juliaup's Julia installs and uv's Pythons through them.
-
-## Remote access
-
-Keep the Cloudflare token in `~/Library/Application Support/Ricochet/`, never in ricochet's folder, because the sandbox lets deployed code read everything there.
-Turn off only the tunnel the previously saved mode started, and turn off a funnel with `tailscale funnel --https=443 off`, never `funnel reset`, which also removes funnels you set up outside the app.
-Run every Tailscale command with `TAILSCALE_BE_CLI=1`, because the binary inside Tailscale.app opens Tailscale's window instead of acting as the CLI whenever no terminal launched it.
-Report a tailnet whose `ControlURL` (from `tailscale debug prefs`) is not Tailscale's as unable to use Funnel, because Headscale does not implement it.
-Check `Tailscale.readiness` before `tailscale funnel --bg`, so the person sees the one step they're missing; without HTTPS certificates the CLI only exits with "Funnel not available; HTTPS must be enabled".
-Run `cloudflared` as its own launch agent outside the sandbox, so restarting ricochet never drops the tunnel.
 
 ## Uninstall
 
@@ -85,9 +82,10 @@ Make a person or ricochet the subject of every sentence in the app, written the 
 Leave a setting out of the app when ricochet ignores it on macOS, as it does `resources.default_memory_limit`.
 Put `.textSelection(.enabled)` on every `Text` outside a button, because SwiftUI text on macOS can't be selected or copied otherwise.
 Build a dropdown from `Menu`, never `.popover`, because macOS centres a popover on its trigger with an arrow instead of dropping it from the field's edge.
-Link to a setting rather than nudging people toward it; a public instance is the point of Remote access, so the pane only links to **Require sign-in for every page**.
+Link to a setting rather than nudging people toward it.
 Copy colour tokens from ricochet's `ricochet-ui/style/theme.css` as OKLCH triples, and keep every corner square, because that theme sets `--radius: 0rem`.
 Run `just fmt` before every commit, because CI fails on anything `just lint` reports.
 Format with swift-format's defaults and keep no `.swift-format` file.
-Validate with `swift build` and `just test`, which need no Xcode: the Command Line Tools build SwiftUI and ship Swift Testing, though SwiftPM only finds the latter through the paths `just test` passes.
+Validate with `just build` and `just test`, never a bare `swift build`, because only the `justfile` sets `SDKROOT` and the Swift Testing paths the Command Line Tools need.
+Keep `SDKROOT` on the macOS 26 SDK until the Command Line Tools ship a `SwiftUIMacros` plugin, because `@State` is a macro in the 27 SDK and the Command Line Tools 27 have no plugin to expand it.
 Run `just icons` after changing `Support/logo.svg` and commit what it renders, because `just app` copies those files and needs no `rsvg-convert`.

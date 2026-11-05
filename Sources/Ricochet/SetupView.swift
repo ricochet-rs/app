@@ -6,8 +6,11 @@ struct SetupView: View {
 
   @Environment(ServerController.self) private var server
   @Environment(\.dismissWindow) private var dismissWindow
-  @State private var section = SetupSection.signIn
+  @State private var section = SetupSection.authentication
+  @State private var usersTab = UsersTab.settings
   @State private var config = ServerConfig()
+  /// The issuer ricochet signs people in with now, or `nil` before the first setup.
+  @State private var savedIssuer: String?
   @State private var problem: String?
 
   var body: some View {
@@ -19,15 +22,16 @@ struct SetupView: View {
     .frame(minWidth: 680, minHeight: 480)
     .navigationTitle(server.isConfigured ? "Edit configuration" : "Set up ricochet")
     .onChange(of: config) { problem = nil }
+    .onChange(of: config.authentication.managed) { _, managed in
+      if managed { config.server.port = AuthenticationSettings.managedPort }
+    }
     .onAppear {
       NSApp.activate()
       if let saved = try? String(contentsOf: Paths.config, encoding: .utf8),
         let table = try? TOMLTable(string: saved)
       {
         config = ServerConfig(table: table)
-      }
-      if let remoteAccess = RemoteAccessSettings.load(from: Paths.appSupport) {
-        config.remoteAccess = remoteAccess
+        savedIssuer = config.authentication.issuer
       }
     }
   }
@@ -120,17 +124,24 @@ struct SetupView: View {
 
   @ViewBuilder private var pane: some View {
     switch section {
-    case .signIn: SignInPane(settings: $config.signIn, redirectURL: config.redirectURL)
-    case .server:
-      ServerPane(
-        settings: $config.server, localURL: config.localURL, isInstalled: server.installed != nil,
-        install: { Task { await server.install() } },
-        uninstall: { Task { await server.uninstall() } })
-    case .remoteAccess:
-      RemoteAccessPane(settings: $config.remoteAccess, localURL: config.localURL) {
+    case .authentication:
+      AuthenticationPane(
+        settings: $config.authentication, redirectURL: config.redirectURL,
+        changesIssuer: savedIssuer.map { $0 != config.authentication.issuer } ?? false
+      ) {
+        usersTab = .people
         section = .users
       }
-    case .users: UsersPane(settings: $config.users)
+    case .server:
+      ServerPane(
+        settings: $config.server, localURL: config.localURL,
+        portLocked: config.authentication.managed, isInstalled: server.installed != nil,
+        install: { Task { await server.install() } },
+        uninstall: { Task { await server.uninstall() } })
+    case .users:
+      UsersPane(
+        settings: $config.users, tab: $usersTab, isConfigured: server.isConfigured,
+        openRicochet: { _ = NSWorkspace.shared.open(server.dashboard) })
     case .email: EmailPane(settings: $config.email)
     case .packages: PackagesPane(settings: $config.packages)
     case .deployments: DeploymentsPane(settings: $config.deployments)

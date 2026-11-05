@@ -1,8 +1,7 @@
 /// A pane in the setup window, one per settings section.
 enum SetupSection: CaseIterable, Identifiable {
-  case signIn
+  case authentication
   case server
-  case remoteAccess
   case users
   case email
   case packages
@@ -14,13 +13,12 @@ enum SetupSection: CaseIterable, Identifiable {
 
   var id: Self { self }
 
-  var isRequired: Bool { self == .signIn || self == .server }
+  var isRequired: Bool { self == .authentication || self == .server }
 
   var title: String {
     switch self {
-    case .signIn: "Sign-in"
+    case .authentication: "Authentication"
     case .server: "Server"
-    case .remoteAccess: "Remote access"
     case .users: "Users"
     case .email: "Email"
     case .packages: "Packages"
@@ -34,11 +32,10 @@ enum SetupSection: CaseIterable, Identifiable {
 
   var summary: String {
     switch self {
-    case .signIn:
-      "Register an app with your identity provider, then enter its details. The first person to sign in becomes the admin."
+    case .authentication:
+      "Choose how people sign in. Ricochet makes the first person to sign in an admin."
     case .server: "Ricochet runs on this Mac whenever you're logged in."
-    case .remoteAccess: "Let people outside this Mac reach ricochet at an https address."
-    case .users: "Choose the role new people get and how ricochet reads their groups."
+    case .users: "Change each person's role, and choose the role new people get."
     case .email:
       "Ricochet sends email through this mail server, such as notices about failed deployments."
     case .packages: "Choose where ricochet installs R, Julia, and Python packages from."
@@ -53,9 +50,8 @@ enum SetupSection: CaseIterable, Identifiable {
 
   var symbol: String {
     switch self {
-    case .signIn: "person.badge.key"
+    case .authentication: "person.badge.key"
     case .server: "server.rack"
-    case .remoteAccess: "globe"
     case .users: "person.2"
     case .email: "envelope"
     case .packages: "shippingbox"
@@ -69,9 +65,8 @@ enum SetupSection: CaseIterable, Identifiable {
 
   func problem(in config: ServerConfig) -> String? {
     switch self {
-    case .signIn: config.signIn.problem
+    case .authentication: config.authentication.problem
     case .server: config.server.problem
-    case .remoteAccess: config.remoteAccess.problem
     case .users: config.users.problem
     case .email: config.email.problem
     case .packages: config.packages.problem

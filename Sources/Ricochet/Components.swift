@@ -270,6 +270,55 @@ struct ToggleField: View {
 }
 
 /// Basecoat's `select`: a bordered trigger that drops the options down from its leading edge.
+struct SelectMenu<Value: Hashable>: View {
+  let label: String
+  @Binding var selection: Value
+  let options: [Value]
+  let title: (Value) -> String
+
+  init(
+    _ label: String, selection: Binding<Value>, options: [Value],
+    title: @escaping (Value) -> String
+  ) {
+    self.label = label
+    _selection = selection
+    self.options = options
+    self.title = title
+  }
+
+  var body: some View {
+    Menu {
+      Picker(label, selection: $selection) {
+        ForEach(options, id: \.self) { option in
+          Text(title(option)).tag(option)
+        }
+      }
+      .pickerStyle(.inline)
+      .labelsHidden()
+    } label: {
+      HStack {
+        Text(title(selection))
+        Spacer()
+        Image(systemName: "chevron.up.chevron.down")
+          .font(.system(size: 10, weight: .semibold))
+          .foregroundStyle(Theme.mutedForeground)
+      }
+      .font(.system(size: 14))
+      .foregroundStyle(Theme.foreground)
+      .padding(.horizontal, 12)
+      .frame(maxWidth: .infinity)
+      .frame(height: 36)
+      .background(Theme.background)
+      .overlay(Rectangle().strokeBorder(Theme.input))
+      .contentShape(Rectangle())
+    }
+    .menuStyle(.button)
+    .buttonStyle(.plain)
+    .menuIndicator(.hidden)
+  }
+}
+
+/// A labelled `SelectMenu`.
 struct SelectField<Value: Hashable>: View {
   let label: String
   @Binding var selection: Value
@@ -290,35 +339,97 @@ struct SelectField<Value: Hashable>: View {
 
   var body: some View {
     Field(label, description: description) {
-      Menu {
-        Picker(label, selection: $selection) {
-          ForEach(options, id: \.self) { option in
-            Text(title(option)).tag(option)
-          }
-        }
-        .pickerStyle(.inline)
-        .labelsHidden()
-      } label: {
-        HStack {
-          Text(title(selection))
-          Spacer()
-          Image(systemName: "chevron.up.chevron.down")
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Theme.mutedForeground)
-        }
-        .font(.system(size: 14))
-        .foregroundStyle(Theme.foreground)
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity)
-        .frame(height: 36)
-        .background(Theme.background)
-        .overlay(Rectangle().strokeBorder(Theme.input))
-        .contentShape(Rectangle())
-      }
-      .menuStyle(.button)
-      .buttonStyle(.plain)
-      .menuIndicator(.hidden)
+      SelectMenu(label, selection: $selection, options: options, title: title)
     }
+  }
+}
+
+/// Basecoat's boxed `tabs`, one button per option.
+struct Tabs<Value: Hashable>: View {
+  @Binding var selection: Value
+  let options: [Value]
+  let title: (Value) -> String
+
+  init(
+    selection: Binding<Value>, options: [Value], title: @escaping (Value) -> String
+  ) {
+    _selection = selection
+    self.options = options
+    self.title = title
+  }
+
+  var body: some View {
+    HStack(spacing: 0) {
+      ForEach(options, id: \.self) { option in
+        let selected = selection == option
+        Button {
+          selection = option
+        } label: {
+          Text(title(option))
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(selected ? Theme.foreground : Theme.mutedForeground)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(selected ? Theme.background : .clear)
+            .shadow(color: .black.opacity(selected ? 0.06 : 0), radius: 1, y: 1)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+      }
+    }
+    .padding(3)
+    .frame(height: 36)
+    .background(Theme.muted)
+  }
+}
+
+/// Basecoat's `alert`: an icon, a title, a sentence and any buttons below it.
+struct Callout<Actions: View>: View {
+  let symbol: String
+  let tint: Color
+  let title: String
+  let message: String
+  let actions: Actions
+
+  init(
+    symbol: String, tint: Color, title: String, message: String,
+    @ViewBuilder actions: () -> Actions
+  ) {
+    self.symbol = symbol
+    self.tint = tint
+    self.title = title
+    self.message = message
+    self.actions = actions()
+  }
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 12) {
+      Image(systemName: symbol)
+        .foregroundStyle(tint)
+      VStack(alignment: .leading, spacing: 4) {
+        Text(title)
+          .font(.system(size: 14, weight: .medium))
+          .textSelection(.enabled)
+        Text(message)
+          .font(.system(size: 13))
+          .foregroundStyle(Theme.mutedForeground)
+          .fixedSize(horizontal: false, vertical: true)
+          .textSelection(.enabled)
+        actions
+      }
+      Spacer(minLength: 0)
+    }
+    .foregroundStyle(Theme.foreground)
+    .padding(.horizontal, 16)
+    .padding(.vertical, 12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Theme.card)
+    .overlay(Rectangle().strokeBorder(Theme.border))
+  }
+}
+
+extension Callout where Actions == EmptyView {
+  init(symbol: String, tint: Color, title: String, message: String) {
+    self.init(symbol: symbol, tint: tint, title: title, message: message) { EmptyView() }
   }
 }
 

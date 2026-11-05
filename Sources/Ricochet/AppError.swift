@@ -7,11 +7,11 @@ enum AppError: LocalizedError {
   case didNotStart(String)
   case sandboxUnavailable
   case invalidConfig(line: Int, reason: String)
-  case tailscale(String)
+  case userCommand(String)
 
   var errorDescription: String? {
     switch self {
-    case .tailscale(let message):
+    case .userCommand(let message):
       message
     case .invalidConfig(let line, let reason):
       "Ricochet can't read line \(line) of ricochet-config.toml: \(reason). Fix the file, then save again."

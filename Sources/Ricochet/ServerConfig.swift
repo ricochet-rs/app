@@ -3,7 +3,7 @@ import TOMLKit
 
 /// Every pane's answers, stored in `ricochet-config.toml`.
 struct ServerConfig: Equatable {
-  var signIn = SignInSettings()
+  var authentication = AuthenticationSettings()
   var server = ServerSettings()
   var users = UserSettings()
   var email = EmailSettings()
@@ -13,18 +13,16 @@ struct ServerConfig: Equatable {
   var logging = LoggingSettings()
   var auditLog = AuditLogSettings()
   var telemetry = TelemetrySettings()
-  /// Kept by the app rather than in `ricochet-config.toml`, which receives only the `url` it produces.
-  var remoteAccess = RemoteAccessSettings()
 
   var localURL: String { "http://localhost:\(server.proxyPort ?? 6188)" }
 
-  /// The address people open ricochet at.
-  var url: String { remoteAccess.url(local: localURL) }
-
-  var redirectURL: String { url + "/oauth/callback" }
+  var redirectURL: String { localURL + "/oauth/callback" }
 
   private var sections: [any SettingsSection] {
-    [signIn, server, users, email, packages, deployments, tasks, logging, auditLog, telemetry]
+    [
+      authentication, server, users, email, packages, deployments, tasks, logging, auditLog,
+      telemetry,
+    ]
   }
 
   /// Writes every pane into the config `file`, keeping each setting no pane manages.
@@ -33,7 +31,7 @@ struct ServerConfig: Equatable {
     do {
       let table = try TOMLTable(string: existing)
       table["home"] = Paths.home.path(percentEncoded: false)
-      table["url"] = url
+      table["url"] = localURL
       for section in sections { section.apply(to: table) }
 
       let ports = NetworkPorts(proxy: proxyPort, keeping: table["network"]?.table)
@@ -58,7 +56,7 @@ extension ServerConfig {
   /// Every pane's answers as saved in `table`, the parsed `ricochet-config.toml`.
   init(table: TOMLTable) {
     self.init(
-      signIn: SignInSettings(table: table),
+      authentication: AuthenticationSettings(table: table),
       server: ServerSettings(table: table),
       users: UserSettings(table: table),
       email: EmailSettings(table: table),
@@ -68,8 +66,5 @@ extension ServerConfig {
       logging: LoggingSettings(table: table),
       auditLog: AuditLogSettings(table: table),
       telemetry: TelemetrySettings(table: table))
-    if let saved = table["url"]?.string, saved != localURL {
-      remoteAccess = RemoteAccessSettings(mode: .custom, customURL: saved)
-    }
   }
 }

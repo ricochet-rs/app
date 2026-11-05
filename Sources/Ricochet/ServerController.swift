@@ -23,24 +23,11 @@ final class ServerController {
   private(set) var failure: Failure?
   private(set) var isConfigured = FileManager.default.fileExists(
     atPath: Paths.config.path(percentEncoded: false))
-  /// Whether ricochet answers at its public address, or `nil` until the first check.
-  private(set) var publicReachable: Bool?
 
   private static let portKey = "proxyPort"
-  private static let urlKey = "url"
 
-  /// Where people open ricochet, which is the public URL when the setup form set one.
+  /// Where you open ricochet on this Mac.
   var dashboard: URL {
-    UserDefaults.standard.string(forKey: Self.urlKey).flatMap { URL(string: $0) } ?? localURL
-  }
-
-  /// Where people outside this Mac reach ricochet, or `nil` when only this Mac does.
-  var publicURL: URL? {
-    dashboard.host() == "localhost" ? nil : dashboard
-  }
-
-  /// Where this Mac reaches ricochet directly, whatever tunnel sits in front of it.
-  private var localURL: URL {
     let port = UserDefaults.standard.integer(forKey: Self.portKey)
     return URL(string: "http://localhost:\(port == 0 ? 6188 : port)")!
   }
@@ -55,7 +42,6 @@ final class ServerController {
   }
 
   func setUp(_ config: ServerConfig) async {
-    var config = config
     await perform("Checking your settings", failing: "Ricochet didn't finish setting up") {
       guard let proxyPort = config.server.proxyPort else { throw AppError.portInUse(0) }
       // Ricochet itself holds the port it already uses, so only a new port can belong to another app.
@@ -63,14 +49,6 @@ final class ServerController {
         !NetworkPorts.isFree(proxyPort)
       {
         throw AppError.portInUse(proxyPort)
-      }
-      if config.remoteAccess.mode == .tailscale {
-        activity = "Checking Tailscale"
-        let readiness = await Tailscale.readiness()
-        guard case .ready(let hostname) = readiness else {
-          throw AppError.tailscale(readiness.message)
-        }
-        config.remoteAccess.tailscaleHostname = hostname
       }
       activity = "Stopping ricochet"
       try await LaunchAgent.server.stop()
@@ -93,13 +71,6 @@ final class ServerController {
       try await LaunchAgent.server.start()
       try await waitUntilRunning()
       isConfigured = true
-
-      activity = "Connecting remote access"
-      let previous = RemoteAccessSettings.load(from: Paths.appSupport)?.mode ?? .off
-      try config.remoteAccess.save(to: Paths.appSupport)
-      try await config.remoteAccess.connect(replacing: previous, port: proxyPort)
-      UserDefaults.standard.set(config.url, forKey: Self.urlKey)
-      publicReachable = nil
       _ = NSWorkspace.shared.open(dashboard)
     }
   }
@@ -156,22 +127,14 @@ final class ServerController {
   /// Stops everything the app started and moves ricochet and its data to the Trash, keeping this app for a fresh setup.
   func uninstall() async {
     await perform("Uninstalling ricochet", failing: "Ricochet didn't finish uninstalling") {
-      if RemoteAccessSettings.load(from: Paths.appSupport)?.mode == .tailscale {
-        await Tailscale.stopFunnel()
-      }
-      for agent in [LaunchAgent.tunnel, LaunchAgent.server]
-      where FileManager.default.fileExists(atPath: agent.plist.path(percentEncoded: false)) {
-        try await agent.remove()
-      }
-      for item in [Paths.home, Paths.appSupport, Paths.binary, Paths.cloudflared]
+      try await LaunchAgent.server.remove()
+      for item in [Paths.home, Paths.appSupport, Paths.binary]
       where FileManager.default.fileExists(atPath: item.path(percentEncoded: false)) {
         try FileManager.default.trashItem(at: item, resultingItemURL: nil)
       }
       UserDefaults.standard.removeObject(forKey: Self.portKey)
-      UserDefaults.standard.removeObject(forKey: Self.urlKey)
       installed = nil
       isConfigured = false
-      publicReachable = nil
     }
   }
 
@@ -213,17 +176,12 @@ final class ServerController {
       }
     }
     var checkedReleases = Date.distantPast
-    var checkedPublic = Date.distantPast
     while !Task.isCancelled {
       if checkedReleases.timeIntervalSinceNow < -12 * 60 * 60 {
         latest = try? await ServerRelease.latest()
         checkedReleases = .now
       }
       if activity == nil { await refreshStatus() }
-      if let publicURL, checkedPublic.timeIntervalSinceNow < -30 {
-        publicReachable = await answers(at: publicURL, within: 5)
-        checkedPublic = .now
-      }
       try? await Task.sleep(for: .seconds(3))
     }
   }
@@ -231,7 +189,7 @@ final class ServerController {
   private func refreshStatus() async {
     if installed == nil {
       status = .notInstalled
-    } else if await answers(at: localURL, within: 2) {
+    } else if await answers() {
       status = .running
     } else if await LaunchAgent.server.isLoaded() {
       status = .starting
@@ -240,18 +198,18 @@ final class ServerController {
     }
   }
 
-  /// Whether ricochet's `/health` at `url` returns 200 within `seconds`.
-  private func answers(at url: URL, within seconds: TimeInterval) async -> Bool {
+  /// Whether ricochet's `/health` returns 200 within two seconds.
+  private func answers() async -> Bool {
     let request = URLRequest(
-      url: url.appending(path: "health"), cachePolicy: .reloadIgnoringLocalCacheData,
-      timeoutInterval: seconds)
+      url: dashboard.appending(path: "health"), cachePolicy: .reloadIgnoringLocalCacheData,
+      timeoutInterval: 2)
     guard let (_, response) = try? await URLSession.shared.data(for: request) else { return false }
     return (response as? HTTPURLResponse)?.statusCode == 200
   }
 
   private func waitUntilRunning() async throws {
     for _ in 0..<60 {
-      if await answers(at: localURL, within: 2) { return }
+      if await answers() { return }
       try await Task.sleep(for: .seconds(1))
     }
     let log = (try? String(contentsOf: Paths.stderr, encoding: .utf8)) ?? ""
