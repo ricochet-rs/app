@@ -1,6 +1,9 @@
 # Keep equal to RENV_VERSION in ricochet's utils/vendor-versions.sh.
 renv_version := "108c2445fa9691d9695f1a139dad91971c9952cb"
 
+# Compile Package.swift against a module cache in .build, because root on the Crow Mac agent can't write its own.
+manifest_flags := '-Xbuild-tools-swiftc -module-cache-path -Xbuild-tools-swiftc "' + justfile_directory() + '/.build/ModuleCache"'
+
 # Build dist/Ricochet.app and open it, quitting the copy already running
 run: app
     -pkill -x Ricochet
@@ -8,7 +11,7 @@ run: app
 
 # Compile the app
 build:
-    swift build -c release --arch arm64 --disable-sandbox
+    swift build -c release --arch arm64 {{ manifest_flags }}
 
 # Format the Swift sources in place with swift-format
 fmt:
@@ -23,7 +26,7 @@ test:
     #!/usr/bin/env bash
     set -euo pipefail
     dev="${DEVELOPER_DIR:-$(xcode-select -p)}/Library/Developer"
-    swift test --disable-sandbox \
+    swift test {{ manifest_flags }} \
         -Xswiftc -F -Xswiftc "$dev/Frameworks" \
         -Xlinker -F -Xlinker "$dev/Frameworks" \
         -Xlinker -rpath -Xlinker "$dev/Frameworks" \
@@ -36,7 +39,7 @@ app version="0.0.0": build
     app=dist/Ricochet.app
     rm -rf "$app"
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-    cp "$(swift build -c release --arch arm64 --disable-sandbox --show-bin-path)/Ricochet" "$app/Contents/MacOS/Ricochet"
+    cp "$(swift build -c release --arch arm64 {{ manifest_flags }} --show-bin-path)/Ricochet" "$app/Contents/MacOS/Ricochet"
     sed "s/__VERSION__/{{ version }}/g" Support/Info.plist > "$app/Contents/Info.plist"
     cp Support/AppIcon.icns Support/MenuBarRunning.pdf Support/MenuBarStopped.pdf "$app/Contents/Resources/"
     renv=".build/renv-{{ renv_version }}.tar.gz"
