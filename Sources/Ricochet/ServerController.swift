@@ -62,7 +62,7 @@ final class ServerController {
       activity = "Writing your configuration"
       try FileManager.default.createDirectory(
         at: Paths.home, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-      try installRenv()
+      try installBundledFiles()
       try config.save(proxyPort: proxyPort, to: Paths.config)
       UserDefaults.standard.set(Int(proxyPort), forKey: Self.portKey)
       try LaunchAgent.writeServerJob()
@@ -100,7 +100,7 @@ final class ServerController {
       "Updating to ricochet \(release.version)", failing: "Ricochet didn't finish updating"
     ) {
       try await release.install()
-      try installRenv()
+      try installBundledFiles()
       installed = await ServerRelease.installed()
       if await LaunchAgent.server.isLoaded() {
         try await LaunchAgent.server.restart()
@@ -167,7 +167,7 @@ final class ServerController {
   private func watch() async {
     installed = await ServerRelease.installed()
     if isConfigured {
-      try? installRenv()
+      try? installBundledFiles()
       await perform("Restarting ricochet", failing: "Ricochet didn't restart") {
         guard try LaunchAgent.writeServerJob(), await LaunchAgent.server.isLoaded() else { return }
         try await LaunchAgent.server.stop()
@@ -216,20 +216,24 @@ final class ServerController {
     throw AppError.didNotStart(log.split(separator: "\n").suffix(8).joined(separator: "\n"))
   }
 
-  /// Copies the renv bundled with this app to where ricochet-server installs it from.
-  private func installRenv() throws {
-    guard let bundled = Bundle.main.url(forResource: "renv", withExtension: "tar.gz") else {
-      return
-    }
+  /// Copies renv and the launch agent's launcher out of this app, so moving the app never breaks ricochet.
+  private func installBundledFiles() throws {
     let manager = FileManager.default
-    if manager.contentsEqual(
-      atPath: bundled.path(percentEncoded: false), andPath: Paths.renv.path(percentEncoded: false))
+    let contents = Bundle.main.bundleURL.appending(path: "Contents")
+    for (bundled, installed) in [
+      (contents.appending(path: "Resources/renv.tar.gz"), Paths.renv),
+      (contents.appending(path: "Helpers/ricochet"), Paths.launcher),
+    ]
+    where manager.fileExists(atPath: bundled.path(percentEncoded: false))
+      && !manager.contentsEqual(
+        atPath: bundled.path(percentEncoded: false), andPath: installed.path(percentEncoded: false))
     {
-      return
+      try manager.createDirectory(
+        at: installed.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try? manager.removeItem(at: installed)
+      try manager.copyItem(at: bundled, to: installed)
     }
-    try manager.createDirectory(
-      at: Paths.renv.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try? manager.removeItem(at: Paths.renv)
-    try manager.copyItem(at: bundled, to: Paths.renv)
+    // launchd can't run a quarantined executable that Apple hasn't notarized.
+    removexattr(Paths.launcher.path(percentEncoded: false), "com.apple.quarantine", 0)
   }
 }

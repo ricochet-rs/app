@@ -51,6 +51,7 @@ Read and change people with `ricochet-server user --config <file>`, which the ap
 ## Sandbox
 
 Run `ricochet-server` under `sandbox-exec` with the profile in `LaunchAgent.swift`, and keep ricochet's source unchanged: every process the server starts inherits the profile.
+Start the job through the `ricochet` launcher, which execs `sandbox-exec`, because macOS names a background item after the executable launchd runs.
 Never let the profile write `~/Library/LaunchAgents` or `~/.local/bin`, because content could rewrite the job or the binary and leave the sandbox at the next start.
 Pass folders to the profile as `-D` parameters rather than writing them into its text, so a path never needs SBPL escaping.
 Deny `file-read-data` under `/Users`, never `file-read*`, because R and Python resolve a path by reading the metadata of every parent folder.

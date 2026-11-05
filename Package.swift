@@ -12,6 +12,7 @@ let package = Package(
       name: "Ricochet",
       dependencies: [.product(name: "TOMLKit", package: "TOMLKit")],
       path: "Sources/Ricochet"),
+    .executableTarget(name: "RicochetLauncher", path: "Sources/RicochetLauncher"),
     .testTarget(
       name: "RicochetTests",
       dependencies: ["Ricochet", .product(name: "TOMLKit", package: "TOMLKit")],

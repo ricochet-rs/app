@@ -46,8 +46,10 @@ app version="0.0.0": build
     set -euo pipefail
     app=dist/Ricochet.app
     rm -rf "$app"
-    mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-    cp "$(swift build -c release --arch arm64 {{ manifest_flags }} --show-bin-path)/Ricochet" "$app/Contents/MacOS/Ricochet"
+    mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
+    bin="$(swift build -c release --arch arm64 {{ manifest_flags }} --show-bin-path)"
+    cp "$bin/Ricochet" "$app/Contents/MacOS/Ricochet"
+    cp "$bin/RicochetLauncher" "$app/Contents/Helpers/ricochet"
     sed "s/__VERSION__/{{ version }}/g" Support/Info.plist > "$app/Contents/Info.plist"
     cp Support/AppIcon.icns Support/MenuBarRunning.pdf Support/MenuBarStopped.pdf "$app/Contents/Resources/"
     renv=".build/renv-{{ renv_version }}.tar.gz"
@@ -61,6 +63,7 @@ app version="0.0.0": build
     fi
     cp "$renv" "$app/Contents/Resources/renv.tar.gz"
     # Apple Silicon refuses unsigned code, so sign ad hoc until there is a Developer ID.
+    codesign --force --sign - "$app/Contents/Helpers/ricochet"
     codesign --force --sign - "$app"
 
 # Render the menu bar icons and the app icon in Support/ from Support/logo.svg (needs rsvg-convert)

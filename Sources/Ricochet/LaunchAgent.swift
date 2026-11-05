@@ -114,7 +114,7 @@ extension LaunchAgent {
     try FileManager.default.createDirectory(
       at: Paths.sandboxHome, withIntermediateDirectories: true)
     return try server.write([
-      "ProgramArguments": [sandboxExec] + parameters + [
+      "ProgramArguments": [Paths.launcher.path(percentEncoded: false)] + parameters + [
         "-p", sandboxProfile,
         Paths.binary.path(percentEncoded: false), "start",
         "--config", Paths.config.path(percentEncoded: false),
@@ -126,6 +126,7 @@ extension LaunchAgent {
         "UV_PYTHON_INSTALL_DIR": uvPythons.path(percentEncoded: false),
         "JULIAUP_DEPOT_PATH": juliaDepot.path(percentEncoded: false),
       ],
+      "AssociatedBundleIdentifiers": "rs.ricochet.mac",
       "RunAtLoad": true,
       "KeepAlive": ["SuccessfulExit": false],
       "StandardOutPath": Paths.stdout.path(percentEncoded: false),

@@ -17,4 +17,6 @@ enum Paths {
   static let appSupport = userHome.appending(path: "Library/Application Support/Ricochet")
   /// Every failure the app showed, with the step it was on, so a cut-off message can still be read.
   static let appLog = appSupport.appending(path: "ricochet-app.log")
+  /// The launch agent's executable, which macOS shows by name in **Login Items & Extensions**.
+  static let launcher = appSupport.appending(path: "ricochet")
 }
