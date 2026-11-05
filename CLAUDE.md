@@ -48,7 +48,7 @@ Run `ricochet-server` under `sandbox-exec` with the profile in `LaunchAgent.swif
 Never let the profile write `~/Library/LaunchAgents` or `~/.local/bin`, because content could rewrite the job or the binary and leave the sandbox at the next start.
 Pass folders to the profile as `-D` parameters rather than writing them into its text, so a path never needs SBPL escaping.
 Deny `file-read-data` under `/Users`, never `file-read*`, because R and Python resolve a path by reading the metadata of every parent folder.
-Set `HOME` inside ricochet's folder, and point `UV_PYTHON_INSTALL_DIR` and `JULIAUP_DEPOT_PATH` at the real ones, because the server finds uv's Pythons and juliaup's Julia installs through them.
+Set `HOME` inside ricochet's folder, and point `JULIAUP_DEPOT_PATH` and `UV_PYTHON_INSTALL_DIR` at the real ones, because the server finds juliaup's Julia installs and uv's Pythons through them.
 
 ## Remote access
 
@@ -63,7 +63,7 @@ Run `cloudflared` as its own launch agent outside the sandbox, so restarting ric
 
 Move what uninstall removes to the Trash, never delete it, because ricochet's folder holds the only keys that decrypt its environment variables.
 Keep the app itself on uninstall; it returns to the setup state so you can install ricochet again.
-Leave uv's Pythons and juliaup's Julia installs alone, because the person installed those, not the app.
+Leave juliaup's Julia installs and uv's Pythons alone, because the person installed those, not the app.
 
 ## renv
 
@@ -73,8 +73,7 @@ Ricochet installs whichever tarball the app copies, but reinstalls renv only whe
 ## CI
 
 Run git-sv and commitlint on the Linux agent and only Swift builds on the Apple Silicon agent, because that agent runs the `local` backend, where `image` names the shell and containers do not exist.
-Pass `swiftpm_flags` from the `justfile` to every `swift build` and `swift test`, because the Apple Silicon agent runs each step in a sandbox, where `sandbox-exec` can't nest and root can't write its own module cache, which that agent's compiler, a newer build than its SDK, has to fill.
-Keep `--build-system native` in `swiftpm_flags`, because SwiftPM 6.4's default, Swift Build, never loads the `SwiftUIMacros` plugin that `@State` needs in the macOS 27 SDK.
+Pass `manifest_flags` from the `justfile` to every `swift build` and `swift test`, because the Apple Silicon agent runs each step in a sandbox, where `sandbox-exec` can't nest and root can't write its own module cache, which that agent's compiler, a newer build than its SDK, has to fill.
 Keep `dmg.yaml` depending on `release`, because `gh release upload` needs the release `release.yaml` creates.
 Write Crow metadata in brace form (`${CI_COMMIT_TAG}`) and shell-local variables bare or with `$$`, because Crow expands `${...}` before the shell runs, as ricochet's root `CLAUDE.md` explains.
 Make every release step safe to restart: edit the release when it exists, and upload the `.dmg` with `--clobber`.
