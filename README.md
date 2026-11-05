@@ -1,82 +1,53 @@
 # Ricochet for Mac
 
-An app that installs ricochet on an Apple Silicon Mac and keeps it running while you are logged in.
-It sits in the Dock and the menu bar, and ricochet keeps running after you quit it.
-People sign in through your OpenID Connect provider or Microsoft Entra ID.
+Run ricochet on your Mac and deploy your R, Julia, and Python work to it.
 
-## Build
+## Install
 
-```sh
-just dmg 0.1.0
-```
+You need an Apple Silicon Mac with macOS 15 or later, and R, Julia, or Python.
 
-This writes `dist/ricochet-0.1.0.dmg`.
-You need macOS 15 or later, the Xcode Command Line Tools, and `just`.
+1. Download `ricochet-<version>.dmg` from the [latest release](https://github.com/ricochet-rs/macos/releases/latest).
+2. Drag **Ricochet** into **Applications** and open it.
+3. If macOS blocks it, open **System Settings** > **Privacy & Security** and select **Open Anyway**.
 
-## Release
+![The Ricochet menu in the macOS menu bar](docs/screenshots/menu.png)
 
-```sh
-git sv next-version
-git tag v0.2.0
-git push origin v0.2.0
-```
+## Set up sign-in
 
-`git sv next-version` prints the next version from the commits since the last tag.
-Pushing the tag publishes a GitHub release with notes from those commits and attaches `ricochet-0.2.0.dmg`.
+1. Register an app with your identity provider.
+2. In **Sign-in**, choose **OpenID Connect** or **Microsoft Entra ID** and enter the **Issuer URL**, **Client ID**, and **Client secret**.
+3. Copy the **Redirect URL** into the app you registered.
+4. Select **Install and start**.
 
-## What the app installs
+The first person to sign in becomes the admin.
 
-| Path | Contents |
-| --- | --- |
-| `~/.local/bin/ricochet-server` | The latest ricochet release |
-| `~/.local/share/ricochet/` | Configuration, database, content, logs, and encryption keys |
-| `~/Library/LaunchAgents/rs.ricochet.server.plist` | Starts ricochet when you log in |
-| `~/Library/Application Support/Ricochet/` | Your remote access choice and the Cloudflare tunnel token |
-| `~/.local/bin/cloudflared` and `~/Library/LaunchAgents/rs.ricochet.tunnel.plist` | Only when you use Cloudflare Tunnel |
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/sign-in-dark.png">
+  <img alt="The Sign-in pane of the setup window" src="docs/screenshots/sign-in.png">
+</picture>
 
-## Settings
+## Share it
 
-Change settings from the menu bar with **Edit configuration**.
-Settings you add to `ricochet-config.toml` yourself, such as an `[smtp]` section, survive a save, but comments and formatting do not.
+Open **Edit configuration** > **Remote access** and pick one:
 
-## Remote access
+- **Tailscale Funnel** for your Mac's `ts.net` address
+- **Cloudflare Tunnel** for a hostname on your own domain
+- **Your own address** for any other tunnel or proxy
 
-Choose how people outside your Mac reach ricochet under **Edit configuration** > **Remote access**:
+Follow the steps on the pane, select **Save and restart**, and add the new **Redirect URL** to your identity provider.
 
-- **Tailscale Funnel** publishes ricochet at your Mac's `ts.net` address. You need the Tailscale app, HTTPS certificates turned on for your tailnet, and Funnel allowed for your Mac. The pane tells you which of these is missing. Funnel doesn't work on a tailnet you run on Headscale.
-- **Cloudflare Tunnel** publishes ricochet at a hostname on your own domain. Create the tunnel in the Cloudflare dashboard, paste its token, and point its public hostname at the service URL the pane shows. Ricochet installs and runs `cloudflared` for you.
-- **Your own address** is for any other tunnel or proxy you run.
+![The Remote access pane set to Cloudflare Tunnel](docs/screenshots/remote-access.png)
 
-Each choice changes the redirect URL, so add the new one to your identity provider's app.
-The menu bar shows whether ricochet answers at its public address.
+## Everyday use
 
-## Sandbox
+Click the rabbit in your menu bar to open, restart, or update ricochet, or to read its logs.
+Ricochet keeps running after you quit the app.
 
-Ricochet and everything it runs can write only to `~/.local/share/ricochet` and temporary folders.
-They can read system folders and the R, Python, Julia, and Quarto installs they run, but not the rest of your home folder or other drives.
-Their `~` is `~/.local/share/ricochet/home`.
+## Your files stay private
 
-## First launch
-
-The app is not notarized, so macOS blocks it the first time you open it.
-Open **System Settings**, select **Privacy & Security**, and select **Open Anyway**.
+Ricochet runs your apps in a sandbox, so they can't read the rest of your home folder or other drives.
 
 ## Uninstall
 
-Open **Edit configuration**, select **Server**, and select **Uninstall ricochet**.
-The app stops ricochet and moves it, with its content, database, caches and encryption keys, to the Trash, so you can restore them until you empty it.
-The app stays: **Install ricochet** in the same place downloads ricochet again, and **Save and start** sets it up once you fill in **Sign-in**.
-
-To uninstall by hand instead:
-
-```sh
-launchctl bootout gui/$(id -u)/rs.ricochet.server
-launchctl bootout gui/$(id -u)/rs.ricochet.tunnel
-rm -f ~/Library/LaunchAgents/rs.ricochet.server.plist ~/Library/LaunchAgents/rs.ricochet.tunnel.plist
-rm -f ~/.local/bin/ricochet-server ~/.local/bin/cloudflared
-rm -rf ~/Library/Application\ Support/Ricochet
-```
-
-If you used Tailscale Funnel, turn it off with `tailscale funnel --https=443 off`.
-Then delete Ricochet from Applications.
-Your data stays in `~/.local/share/ricochet`, including the keys that decrypt your environment variables, so delete that folder only when you no longer need anything you deployed.
+Open **Edit configuration** > **Server** and select **Uninstall ricochet**.
+The app moves ricochet and everything you deployed to the Trash, so empty it only when you no longer need them.
