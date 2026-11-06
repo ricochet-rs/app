@@ -17,9 +17,14 @@ mod shell;
 mod ui;
 
 use controller::ServerController;
-use gpui::{App, AppContext, Application, Bounds, WindowBounds, WindowOptions, px, size};
+use gpui::{
+    App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, WindowBounds, WindowOptions,
+    actions, px, size,
+};
 use gpui_component::Root;
 use ui::setup::SetupView;
+
+actions!(ricochet, [Quit]);
 
 fn main() {
     Application::new()
@@ -27,6 +32,21 @@ fn main() {
         .run(|cx: &mut App| {
             gpui_component::init(cx);
             ui::theme::apply(None, cx);
+
+            cx.on_action(|_: &Quit, cx| cx.quit());
+            cx.bind_keys([KeyBinding::new(
+                if cfg!(target_os = "macos") {
+                    "cmd-q"
+                } else {
+                    "ctrl-q"
+                },
+                Quit,
+                None,
+            )]);
+            cx.set_menus(vec![Menu {
+                name: "ricochet".into(),
+                items: vec![MenuItem::action("Quit ricochet", Quit)],
+            }]);
 
             let bounds = Bounds::centered(None, size(px(900.0), px(680.0)), cx);
             let options = WindowOptions {
