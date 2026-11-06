@@ -3564,33 +3564,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "native"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "dirs 7.0.0",
- "flate2",
- "futures",
- "gpui",
- "gpui-component",
- "gpui-component-assets",
- "libc",
- "open",
- "plist",
- "rust-embed",
- "serde",
- "serde_json",
- "socket2",
- "tar",
- "tempfile",
- "thiserror 2.0.21",
- "toml_edit 0.25.19+spec-1.1.0",
- "trash",
- "ureq",
-]
-
-[[package]]
 name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4834,6 +4807,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "ricochet-app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs 7.0.0",
+ "flate2",
+ "futures",
+ "gpui",
+ "gpui-component",
+ "gpui-component-assets",
+ "libc",
+ "open",
+ "plist",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "socket2",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.21",
+ "toml_edit 0.25.19+spec-1.1.0",
+ "trash",
+ "ureq",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 # Publishes the GitHub release for a pushed tag, with notes git-sv writes from the commits since the previous tag.
-# dmg.yaml waits for this workflow, because `gh release upload` needs the release to exist.
+# mac.yaml, linux.yaml and windows.yaml wait for this workflow, because `gh release upload` needs the release to exist.
 clone:
   git:
     image: codefloe.com/crow-plugins/clone:1.2.2

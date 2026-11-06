@@ -15,43 +15,43 @@ If authentication, synchronization, HEAD validation, or a required read fails, s
 
 ## Scope
 
-The app runs ricochet for one person on one Apple Silicon Mac.
-Never write a `[backend]` section, because content runs as processes on the Mac and Kubernetes and containers are out of scope.
+The app runs ricochet for one person, on this machine or on a Linux server it reaches over SSH, and builds for Apple Silicon macOS, x86_64 Linux and x86_64 Windows.
+Never write a `[backend]` section, because content runs as processes on the machine and Kubernetes and containers are out of scope.
 Offer OpenID Connect and Entra only: ricochet refuses a SAML assertion consumer URL that is not `https`, and the server here serves `http://localhost`.
 
 ## App
 
-Keep the app a regular app, never `LSUIElement`, because a menu-bar-only app has no Dock icon or ⌘-Tab entry, so its window falls behind other apps with nothing to bring it back.
-Reopen the setup window for a Dock click through `MenuBarLabel`, because the menu bar item is the only view always on screen to call `openWindow`.
+Keep the app a regular app, never `LSUIElement` in `Support/Info.plist`, because a menu-bar-only app has no Dock icon or ⌘-Tab entry, so its window falls behind other apps with nothing to bring it back.
+Compile the systemd code on every platform, because the SSH backend drives a Linux server's systemd from macOS and Windows too.
 
 ## Server process
 
-Run `ricochet-server start` in the foreground under the launch agent, never with `--daemon`, because launchd cannot supervise a process that forks away from it.
+Run `ricochet-server start` in the foreground under the launch agent or systemd unit, never with `--daemon`, because neither can supervise a process that forks away from it.
 Write an absolute `home` and pass `--config`, because launchd starts the job in `/` and ricochet's `home` defaults to the working directory.
 Turn on `logs.file_logging`, because launchd appends stdout to its file forever and never rotates it.
 Probe the proxy port only when the person changed it, before stopping the server, and with `SO_REUSEADDR`, because ricochet's own just-closed connections make its port look taken right after it stops.
 Keep the ports already saved in `[network]` instead of probing again, so a save never moves ricochet's internal ports.
+Give the SSH tunnel its own connection with `ControlPath=none`, because a shared control master takes over the forward, lets `ssh` exit, and keeps the port after the app quits.
 
 ## Configuration
 
 `ricochet-config.toml` is the only store of the setup form's answers.
-Read and write it only through TOMLKit's `TOMLTable`, never by parsing or assembling TOML text.
-Give each config section a `SettingsSection` in `Sources/Ricochet/Settings/`, a pane in `Sources/Ricochet/Panes/` and a `SetupSection` case, and list it in `ServerConfig.sections` and `ServerConfig.init(table:)`.
+Read and write it only through `toml_edit`, never by parsing or assembling TOML text.
+Give each config section a `SettingsSection` in `src/config/`, a pane in `src/ui/setup.rs` and a `SetupSection` case in `src/ui/section.rs`, and list it in `ServerConfig`.
 Write a key only when it differs from ricochet's default, so a later ricochet default still applies; `auth.default_role` is the exception, because ricochet warns at every sign-in without it.
-Edit a section through `TOMLTable.section`, because assigning a table copies it, so edits made to that Swift object afterwards never reach the document.
-Fill a new table key by key rather than with `TOMLTable(dictionary)`, which resolves to TOMLKit's throwing `Encodable` initializer.
-toml++ keeps a table's keys in name order, so the R repositories reach ricochet sorted by name whatever order they were typed in.
+Show ricochet's own default R repository, `CRAN = https://cran.rpkgs.com`, in the form but never write it, so the person can save it as is.
+Sort R repositories by name when saving, because ricochet reads them in name order.
 
 ## Authentication
 
 Save managed auth only after the person selects **I agree**, because you share your name and email address with ricochet when you sign in through it.
-Hold the port at 6188 under managed auth, because Zitadel accepts only `http://localhost:6188/oauth/callback` as the redirect for the Web app in `AuthenticationSettings.managedProvider`.
+Hold the port at 6188 under managed auth, because Zitadel accepts only `http://localhost:6188/oauth/callback` as the redirect for the Web app in `AuthenticationSettings::managed_provider`.
 Warn whenever the form changes the issuer, because ricochet keys each user by the bare OIDC `sub` and gives everyone who signs in through a new identity provider a new account with the default role.
 Read and change people with `ricochet-server user --config <file>`, which the app can run beside the server because ricochet writes SQLite directly, and expect `list` to print `No users found.` instead of JSON when nobody has signed in.
 
 ## Sandbox
 
-Run `ricochet-server` under `sandbox-exec` with the profile in `LaunchAgent.swift`, and keep ricochet's source unchanged: every process the server starts inherits the profile.
+Run `ricochet-server` under `sandbox-exec` on macOS with the profile in `src/service/launchd.rs`, and keep ricochet's source unchanged: every process the server starts inherits the profile.
 Start the job through the `ricochet` launcher, which execs `sandbox-exec`, because macOS names a background item after the executable launchd runs.
 Never let the profile write `~/Library/LaunchAgents` or `~/.local/bin`, because content could rewrite the job or the binary and leave the sandbox at the next start.
 Pass folders to the profile as `-D` parameters rather than writing them into its text, so a path never needs SBPL escaping.
@@ -60,34 +60,36 @@ Set `HOME` inside ricochet's folder, and point `JULIAUP_DEPOT_PATH` and `UV_PYTH
 
 ## Uninstall
 
-Move what uninstall removes to the Trash, never delete it, because ricochet's folder holds the only keys that decrypt its environment variables.
+Move what uninstall removes to the Trash on macOS, and delete it on a Linux server, which has no Trash; the confirmation says ricochet and all of its folders will be deleted.
 Keep the app itself on uninstall; it returns to the setup state so you can install ricochet again.
 Leave juliaup's Julia installs and uv's Pythons alone, because the person installed those, not the app.
 
 ## renv
 
 Keep `renv_version` in the `justfile` equal to `RENV_VERSION` in ricochet's `utils/vendor-versions.sh`.
+Bundle renv in the macOS and Windows builds only, because ricochet's own Linux packages already ship it.
 Ricochet installs whichever tarball the app copies, but reinstalls renv only when its own pin changes.
 
 ## CI
 
-Run git-sv and commitlint on the Linux agent and only Swift builds on the Apple Silicon agent, because that agent runs the `local` backend, where `image` names the shell and containers do not exist.
-Pass `manifest_flags` from the `justfile` to every `swift build` and `swift test`, because the Apple Silicon agent runs each step in a sandbox, where `sandbox-exec` can't nest and root can't write its own module cache, which that agent's compiler, a newer build than its SDK, has to fill.
-Keep `dmg.yaml` depending on `release`, because `gh release upload` needs the release `release.yaml` creates.
+Run git-sv, commitlint, tests and the Linux and Windows builds on the Linux agent, and only the `.dmg` on the Apple Silicon agent, because that agent runs the `local` backend, where `image` names the shell and containers do not exist.
+Set `CARGO_HOME` inside the workspace on the Apple Silicon agent, because it runs each step in a sandbox that can't write the user's own `~/.cargo`.
+Build the AppImage on Debian bullseye, because it links against the oldest glibc it can run on.
+Cross-compile Windows with cargo-xwin and keep the `runtime_shaders` GPUI feature, because no Windows agent exists and the HLSL compiler is Windows-only.
+Keep `mac.yaml`, `linux.yaml` and `windows.yaml` depending on `release`, because `gh release upload` needs the release `release.yaml` creates.
 Write Crow metadata in brace form (`${CI_COMMIT_TAG}`) and shell-local variables bare or with `$$`, because Crow expands `${...}` before the shell runs, as ricochet's root `CLAUDE.md` explains.
-Make every release step safe to restart: edit the release when it exists, and upload the `.dmg` with `--clobber`.
+Make every release step safe to restart: edit the release when it exists, and upload every artifact with `--clobber`.
 `.gitsv/config.yaml` and `.commitlintrc.json` are copies of ricochet's; change them in both repositories together.
 
 ## Style
 
 Write app text in plain, friendly, complete sentences that match the copy already in the app, such as "Enable compression" with "Compress old logs to save disk space.", because clipped label-speak like "The claim that lists each user's groups." reads like a robot.
 Leave a setting out of the app when ricochet ignores it on macOS, as it does `resources.default_memory_limit`.
-Put `.textSelection(.enabled)` on every `Text` outside a button, because SwiftUI text on macOS can't be selected or copied otherwise.
-Build a dropdown from `Menu`, never `.popover`, because macOS centres a popover on its trigger with an arrow instead of dropping it from the field's edge.
 Link to a setting rather than nudging people toward it.
 Copy colour tokens from ricochet's `ricochet-ui/style/theme.css` as OKLCH triples, and keep every corner square, because that theme sets `--radius: 0rem`.
+Set `ricochet` in lowercase monospace through `prose`, which also renders backticked words in monospace.
+Give a scrolling area a fixed pixel height, never `size_full` inside a parent sized by its children, because GPUI resolves the percentage to the content size and the content spills out unclipped.
+Stop scroll-wheel propagation on a scrolling area inside the scrolling page, because GPUI scrolls every scroll container under the pointer.
+Render long lists such as the log through GPUI's `list` with a `ListState`, because building every row on each render makes the window lag.
 Run `just fmt` before every commit, because CI fails on anything `just lint` reports.
-Format with swift-format's defaults and keep no `.swift-format` file.
-Validate with `just build` and `just test`, never a bare `swift build`, because only the `justfile` sets `SDKROOT` and the Swift Testing paths the Command Line Tools need.
-Keep `SDKROOT` on the macOS 26 SDK until the Command Line Tools ship a `SwiftUIMacros` plugin, because `@State` is a macro in the 27 SDK and the Command Line Tools 27 have no plugin to expand it.
-Run `just icons` after changing `Support/logo.svg` and commit what it renders, because `just app` copies those files and needs no `rsvg-convert`.
+Run `just icons` after changing `Support/logo.svg` and commit what it renders, because `just app` and `just appimage` copy those files and need no `rsvg-convert`.

@@ -4,7 +4,7 @@ use crate::error::Result;
 
 #[cfg(target_os = "macos")]
 mod launchd;
-#[cfg(unix)]
+
 mod systemd;
 
 /// A job in your login session, which the system starts at login and restarts when it exits.
@@ -34,7 +34,6 @@ pub fn server(paths: std::sync::Arc<crate::paths::Paths>) -> Box<dyn Service> {
 }
 
 /// The systemd user unit on a Linux computer reached through `shell`.
-#[cfg(unix)]
 pub fn systemd_unit(
     paths: std::sync::Arc<crate::paths::Paths>,
     shell: std::sync::Arc<dyn crate::shell::Shell>,

@@ -1,0 +1,43 @@
+# Builds the x86_64 AppImage from a pushed tag and attaches it to the release from release.yaml.
+# Debian bullseye's older glibc lets the AppImage run on older distributions too.
+clone:
+  git:
+    image: codefloe.com/crow-plugins/clone:1.2.2
+    settings:
+      tags: true
+
+when:
+  - event: tag
+
+depends_on:
+  - release
+
+labels:
+  agent: thumper
+
+steps:
+  'Build the AppImage':
+    image: reg.ricochet.rs/docker.io/library/rust:1-bullseye
+    commands:
+      - apt-get update -qq
+      - apt-get install -y -qq --no-install-recommends build-essential pkg-config cmake clang file curl libasound2-dev libfontconfig-dev libfreetype-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libssl-dev libzstd-dev libvulkan-dev
+      - curl -fsSL https://just.systems/install.sh | bash -s -- --tag 1.43.0 --to /usr/local/bin
+      - |
+        set -euo pipefail
+        VERSION="${CI_COMMIT_TAG#v}"
+        just appimage "$VERSION"
+
+  'Attach the AppImage':
+    image: reg.ricochet.rs/docker.io/library/alpine:3.24
+    depends_on:
+      - 'Build the AppImage'
+    environment:
+      GITHUB_TOKEN:
+        from_secret: ricochet_issue_token
+    commands:
+      - apk add -q --no-cache github-cli
+      - |
+        set -euo pipefail
+        VERSION="${CI_COMMIT_TAG#v}"
+        # --clobber replaces the asset a previous run of this tag uploaded.
+        gh release upload "$CI_COMMIT_TAG" "dist/ricochet-$VERSION-x86_64.AppImage" --repo "${CI_REPO}" --clobber
