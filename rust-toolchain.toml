@@ -1,0 +1,4 @@
+# The same toolchain ricochet pins, so the Apple Silicon agent, which has no default toolchain, already has it.
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
