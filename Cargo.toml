@@ -29,3 +29,14 @@ tempfile = "3.27.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 plist = "1.10.3"
+
+# GPUI precompiles its Windows shaders with fxc.exe only when it builds on Windows, so the cross-compiled
+# Windows build keeps its debug assertions on, which makes GPUI compile those shaders at run time.
+[profile.windows]
+inherits = "release"
+
+[profile.windows.package.gpui]
+debug-assertions = true
+
+[profile.windows.package.gpui-macros]
+debug-assertions = true

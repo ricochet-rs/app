@@ -25,6 +25,8 @@ steps:
       - curl -fsSL https://just.systems/install.sh | bash -s -- --tag 1.43.0 --to /usr/local/bin
       - |
         set -euo pipefail
+        # Debian names its LLVM tools with a version suffix on PATH; cargo-xwin calls clang-cl, lld-link and llvm-lib by their plain names.
+        export PATH="$(ls -d /usr/lib/llvm-*/bin | sort -V | tail -n 1):$PATH"
         VERSION="${CI_COMMIT_TAG#v}"
         just windows "$VERSION"
 

@@ -166,6 +166,7 @@ fn log_row(entry: &LogEntry, index: usize, cx: &App) -> AnyElement {
     let raw = entry.raw.clone();
     h_flex()
         .id(("log-row", index))
+        .w_full()
         .group("log-row")
         .gap_3()
         .pl_3()

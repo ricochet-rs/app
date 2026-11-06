@@ -10,6 +10,7 @@ pub enum AppError {
     )]
     InvalidConfig { line: usize, reason: String },
     #[error("ricochet can't start in its sandbox because {0} is missing.")]
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     SandboxUnavailable(PathBuf),
     #[error("Port {0} is in use. Choose another port.")]
     PortInUse(u16),

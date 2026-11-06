@@ -89,10 +89,10 @@ appimage version="0.0.0":
 windows version="0.0.0": renv
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo xwin build --release --target x86_64-pc-windows-msvc --bin ricochet-app
+    cargo xwin build --profile windows --target x86_64-pc-windows-msvc --bin ricochet-app
     stage=$(mktemp -d)
     trap 'rm -rf "$stage"' EXIT
-    cp target/x86_64-pc-windows-msvc/release/ricochet-app.exe "$stage/ricochet.exe"
+    cp target/x86_64-pc-windows-msvc/windows/ricochet-app.exe "$stage/ricochet.exe"
     cp "dist/renv-{{ renv_version }}.tar.gz" "$stage/renv.tar.gz"
     out="$PWD/dist/ricochet-{{ version }}-windows-x86_64.zip"
     rm -f "$out"
