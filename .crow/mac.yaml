@@ -13,6 +13,7 @@ depends_on:
   - release
 
 labels:
+  agent: macmini-pat
   platform: darwin/arm64
 
 steps:

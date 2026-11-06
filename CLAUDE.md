@@ -77,6 +77,7 @@ Ricochet installs whichever tarball the app copies, but reinstalls renv only whe
 ## CI
 
 Run git-sv, commitlint, tests and the Linux and Windows builds on the Linux agent, and only the `.dmg` on the Apple Silicon agent, because that agent runs the `local` backend, where `image` names the shell and containers do not exist.
+Pin `mac.yaml` to `agent: macmini-pat`, because Crow ran it on `thumper` with only `platform: darwin/arm64`.
 Set `CARGO_HOME` inside the workspace on the Apple Silicon agent, because it runs each step in a sandbox that can't write the user's own `~/.cargo`.
 Build the AppImage on Debian bookworm, the oldest Debian that still gets security updates, because the glibc it links against sets the oldest distribution it runs on.
 Start a script in a Debian container with `set -eu`, never `-o pipefail`, because Crow runs it with dash.
