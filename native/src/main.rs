@@ -34,6 +34,9 @@ fn main() {
             };
             cx.open_window(options, |window, cx| {
                 ui::theme::apply(Some(window), cx);
+                window
+                    .observe_window_appearance(|window, cx| ui::theme::apply(Some(window), cx))
+                    .detach();
                 let server = cx.new(ServerController::new);
                 let view = cx.new(|cx| SetupView::new(server, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))

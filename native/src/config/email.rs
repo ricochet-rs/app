@@ -81,23 +81,21 @@ impl SettingsSection for EmailSettings {
             return None;
         }
         if self.host.non_empty().is_none() {
-            return Some("Enter the mail server's host name.".into());
+            return Some("Enter the mail server host.".into());
         }
         if let Some(port) = self.port.non_empty()
             && port.parse::<u16>().map_or(true, |port| port == 0)
         {
-            return Some("Enter a mail server port between 1 and 65535, or leave it empty.".into());
+            return Some("Mail server port must be between 1 and 65535.".into());
         }
         if self.username.non_empty().is_none() != self.password.non_empty().is_none() {
             return Some("Enter both a username and a password, or neither.".into());
         }
         if !self.from.contains('@') {
-            return Some(
-                "Enter the sender's address, such as ricochet <ricochet@example.com>.".into(),
-            );
+            return Some("Enter a From address, such as ricochet <ricochet@example.com>.".into());
         }
         if self.reply_to.non_empty().is_some() && !self.reply_to.contains('@') {
-            return Some("Enter a reply-to address, or leave it empty.".into());
+            return Some("Reply-to must be an email address.".into());
         }
         None
     }

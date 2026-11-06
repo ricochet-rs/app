@@ -1,4 +1,4 @@
-use super::Backend;
+use super::{Backend, DirEntry, sort_entries};
 use crate::command;
 use crate::error::{AppError, Result};
 use crate::paths::Paths;
@@ -6,7 +6,7 @@ use crate::ports::NetworkPorts;
 use crate::release::Release;
 use crate::service::{self, Service};
 use crate::shell::{LocalShell, Shell};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -74,10 +74,6 @@ impl LocalBackend {
 }
 
 impl Backend for LocalBackend {
-    fn is_remote(&self) -> bool {
-        false
-    }
-
     fn paths(&self) -> &Paths {
         &self.paths
     }
@@ -127,18 +123,36 @@ impl Backend for LocalBackend {
         Ok(())
     }
 
-    fn open_dashboard(&self, port: u16) -> Result<()> {
-        let _ = open::that(format!("http://localhost:{port}"));
+    fn list_dir(&self, path: &Path) -> Result<Vec<DirEntry>> {
+        let mut entries = Vec::new();
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let metadata = entry.metadata()?;
+            entries.push(DirEntry {
+                name: entry.file_name().to_string_lossy().into_owned(),
+                is_dir: metadata.is_dir(),
+                size: metadata.len(),
+                modified: metadata
+                    .modified()
+                    .ok()
+                    .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|elapsed| elapsed.as_secs() as i64),
+            });
+        }
+        sort_entries(&mut entries);
+        Ok(entries)
+    }
+
+    /// Moves `paths` to the Trash, so a mistake can still be undone.
+    fn remove_data(&self, paths: &[PathBuf]) -> Result<()> {
+        for path in paths.iter().filter(|path| path.exists()) {
+            trash::delete(path).map_err(|error| AppError::UserCommand(error.to_string()))?;
+        }
         Ok(())
     }
 
-    fn open_logs(&self) -> bool {
-        let paths = &self.paths;
-        let _ = open::that(if paths.logs.exists() {
-            &paths.logs
-        } else {
-            &paths.home
-        });
-        true
+    fn open_dashboard(&self, port: u16) -> Result<()> {
+        let _ = open::that(format!("http://localhost:{port}"));
+        Ok(())
     }
 }

@@ -126,7 +126,7 @@ impl SettingsSection for AuthenticationSettings {
             return None;
         }
         if self.issuer_url.non_empty().is_none() && self.client_id.non_empty().is_none() {
-            return Some("Select I agree on Managed auth, or configure your own IdP.".into());
+            return Some("Choose managed authentication, or configure your own provider.".into());
         }
         if !self.issuer_url.is_http_url() {
             return Some("Enter the issuer URL, starting with https://.".into());
@@ -135,13 +135,10 @@ impl SettingsSection for AuthenticationSettings {
             return Some("Enter the client ID.".into());
         }
         if self.provider == Provider::Entra && self.client_secret.non_empty().is_none() {
-            return Some(
-                "Enter the client secret. Ricochet needs it to read groups and photos from Microsoft Entra ID."
-                    .into(),
-            );
+            return Some("Microsoft Entra ID requires a client secret.".into());
         }
         if !self.sync_interval.is_empty_or_positive() {
-            return Some("Enter the group sync interval as a whole number of minutes.".into());
+            return Some("Group sync interval must be a whole number of minutes.".into());
         }
         None
     }

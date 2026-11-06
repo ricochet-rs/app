@@ -2,12 +2,14 @@
 
 use super::{SetupView, Step};
 use crate::config::section::{Field as _, SettingsSection as _};
-use crate::ui::components::{error_alert, field};
+use crate::ui::components::{error_alert, field, prose};
 use crate::ui::icons::ph;
+use crate::ui::theme::Palette;
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Div, FontWeight, div, px};
 use gpui_component::Disableable as _;
 use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, h_flex, v_flex};
 
@@ -17,6 +19,12 @@ const INSTALL_STAGES: [&str; 4] = [
     "Writing your configuration",
     "Starting ricochet",
 ];
+
+const STEPS: usize = 4;
+const COMMUNITY_EDITION_DOCS: &str =
+    "https://docs.ricochet.rs/latest/admin/pricing/5-community-edition/";
+const MACHINE_ROW_HEIGHT: f32 = 60.0;
+const VISIBLE_MACHINES: usize = 5;
 
 /// Which stage of the install the controller's activity belongs to.
 fn stage_of(activity: &str) -> usize {
@@ -34,10 +42,14 @@ impl Step {
         match self {
             Self::Target => Some(1),
             Self::SignIn => Some(2),
-            Self::Server => Some(3),
+            Self::License => Some(3),
             Self::Review => Some(4),
             _ => None,
         }
+    }
+
+    fn width(self) -> f32 {
+        if self == Self::SignIn { 680.0 } else { 540.0 }
     }
 }
 
@@ -47,72 +59,104 @@ impl SetupView {
             Step::Welcome => self.welcome(cx),
             Step::Target => self.target_step(cx),
             Step::SignIn => (
-                "How will people sign in?".into(),
-                "Pick the easiest option now. You can switch later.".into(),
+                "Configure authentication".into(),
+                "You can change your identity provider later.".into(),
                 self.authentication_pane(cx),
             ),
-            Step::Server => self.server_step(cx),
+            Step::License => self.license_step(cx),
             Step::Review => self.review_step(cx),
             Step::Installing => self.installing_step(cx),
             Step::Done => self.done_step(cx),
         };
-        let wide = step == Step::SignIn;
+        let subtitle_text = if step == Step::License {
+            prose(subtitle)
+                .link("Community Edition", COMMUNITY_EDITION_DOCS)
+                .link_color(cx.theme().foreground)
+        } else {
+            prose(subtitle)
+        };
         v_flex()
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .child(
                 div()
-                    .id("onboarding")
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
+                    .relative()
                     .child(
-                        h_flex().w_full().justify_center().px_6().py_10().child(
-                            v_flex()
-                                .w_full()
-                                .max_w(px(if wide { 640.0 } else { 480.0 }))
-                                .gap_8()
-                                .child(self.progress_dots(step, cx))
-                                .child(
-                                    v_flex()
-                                        .gap_2()
-                                        .child(
-                                            div()
-                                                .text_2xl()
-                                                .font_weight(FontWeight::SEMIBOLD)
-                                                .child(title),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_color(cx.theme().muted_foreground)
-                                                .child(subtitle),
-                                        ),
-                                )
-                                .child(body),
-                        ),
-                    ),
+                        div()
+                            .id("onboarding")
+                            .size_full()
+                            .overflow_y_scroll()
+                            .track_scroll(&self.page_scroll)
+                            .child(
+                                h_flex()
+                                    .w_full()
+                                    .justify_center()
+                                    .px_8()
+                                    .pt_12()
+                                    .pb_10()
+                                    .child(
+                                        v_flex()
+                                            .w_full()
+                                            .max_w(px(step.width()))
+                                            .gap_8()
+                                            .child(self.progress(step, cx))
+                                            .child(
+                                                v_flex()
+                                                    .gap_2()
+                                                    .child(
+                                                        div()
+                                                            .text_2xl()
+                                                            .font_weight(FontWeight::SEMIBOLD)
+                                                            .child(prose(title)),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_color(cx.theme().muted_foreground)
+                                                            .child(subtitle_text),
+                                                    ),
+                                            )
+                                            .child(body),
+                                    ),
+                            ),
+                    )
+                    .vertical_scrollbar(&self.page_scroll),
             )
             .child(self.onboarding_footer(step, cx))
             .into_any_element()
     }
 
-    /// Three bars that fill as the person moves through the choices.
-    fn progress_dots(&self, step: Step, cx: &Context<Self>) -> Div {
+    /// A step count over four bars that fill as the person moves through the choices.
+    fn progress(&self, step: Step, cx: &Context<Self>) -> Div {
         let reached = step.number().unwrap_or(match step {
             Step::Welcome => 0,
-            _ => 4,
+            _ => STEPS,
         });
-        h_flex().gap_1p5().children((1..=4).map(|n| {
-            div().h(px(4.0)).w(px(32.0)).bg(if n <= reached {
-                cx.theme().primary
-            } else {
-                cx.theme().border
-            })
-        }))
+        v_flex()
+            .gap_2()
+            .child(
+                div()
+                    .text_xs()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(cx.theme().muted_foreground)
+                    .child(match step.number() {
+                        Some(n) => format!("Step {n} of {STEPS}"),
+                        None if reached == 0 => "Setup".to_owned(),
+                        None => "Install".to_owned(),
+                    }),
+            )
+            .child(h_flex().gap_1p5().children((1..=STEPS).map(|n| {
+                div().flex_1().h(px(3.0)).bg(if n <= reached {
+                    cx.theme().ring
+                } else {
+                    cx.theme().border
+                })
+            })))
     }
 
-    /// Shown while the app logs in to the computer it managed last time.
+    /// Shown while the app logs in to the machine it managed last time.
     pub(super) fn connecting_view(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let name = self.server.read(cx).connection.name();
         v_flex()
@@ -154,29 +198,30 @@ impl SetupView {
                             div()
                                 .text_sm()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(text),
+                                .child(prose(text)),
                         ),
                 )
         };
         (
             "Welcome to ricochet".into(),
-            "Set up a ricochet server in about a minute, or manage one you already have.".into(),
+            "Install ricochet on this machine or a Linux server, or manage an existing install."
+                .into(),
             v_flex()
                 .gap_5()
                 .child(row(
                     "desktop",
-                    "Runs on this computer",
-                    "Your content and data stay here.",
+                    "Your machine or your server",
+                    "Install locally or on any Linux machine you reach over SSH.",
                 ))
                 .child(row(
                     "power",
-                    "Starts when you log in",
-                    "It keeps running in the background.",
+                    "Runs in the background",
+                    "ricochet starts automatically and keeps running.",
                 ))
                 .child(row(
                     "sliders-horizontal",
-                    "Change anything later",
-                    "Email, packages, logging and more are one click away in Settings.",
+                    "Configure everything here",
+                    "Manage authentication, packages, logs and more from this app.",
                 ))
                 .into_any_element(),
         )
@@ -189,55 +234,89 @@ impl SetupView {
         let connecting = server.activity.clone();
         let choices = server.choices();
         let failure = server.failure.clone();
+        let count = choices.len();
+        let ring = cx.theme().ring;
+        let hover = cx.theme().muted;
         let rows = choices.into_iter().enumerate().map(|(index, choice)| {
             let selected = choice == active && !busy;
             let this_one = connecting
                 .as_deref()
                 .is_some_and(|a| a.ends_with(&choice.name()));
-            let (icon, detail) = if choice.is_remote() {
+            let remote = choice.is_remote();
+            let (icon, detail) = if remote {
                 ("hard-drives", "Linux over SSH")
             } else {
-                ("desktop", "Runs here")
+                ("desktop", "Local")
             };
             let marker: AnyElement = if this_one {
                 Spinner::new().into_any_element()
             } else if selected {
                 ph("check-circle")
                     .size_5()
-                    .text_color(cx.theme().success)
+                    .text_color(ring)
                     .into_any_element()
             } else {
-                div().into_any_element()
+                ph("arrow-right")
+                    .size_4()
+                    .text_color(cx.theme().muted_foreground)
+                    .into_any_element()
             };
-            let hover = cx.theme().muted;
             let target = choice.clone();
             h_flex()
                 .id(("target", index))
+                .w_full()
+                .h(px(MACHINE_ROW_HEIGHT))
+                .flex_shrink_0()
                 .gap_3()
                 .px_4()
-                .py_3()
                 .items_center()
-                .border_1()
-                .border_color(if selected {
-                    cx.theme().ring
-                } else {
-                    cx.theme().border
+                .when(index + 1 < count, |row| {
+                    row.border_b_1().border_color(cx.theme().border)
                 })
-                .when(!busy, |row| {
+                .when(selected, |row| row.bg(ring.opacity(0.07)))
+                .when(!busy && !selected, |row| {
                     row.cursor_pointer().hover(move |row| row.bg(hover))
                 })
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    if !this.server.read(cx).activity.is_some() {
+                    if this.server.read(cx).activity.is_none() {
                         let target = target.clone();
                         this.server
                             .update(cx, |server, cx| server.switch(target, cx));
                     }
                 }))
-                .child(ph(icon).size_5())
+                .child(
+                    div()
+                        .size(px(32.0))
+                        .flex_shrink_0()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .bg(if selected {
+                            ring.opacity(0.16)
+                        } else {
+                            cx.theme().muted
+                        })
+                        .child(ph(icon).size_4().text_color(if selected {
+                            ring
+                        } else {
+                            cx.theme().foreground
+                        })),
+                )
                 .child(
                     v_flex()
                         .flex_1()
-                        .child(div().font_weight(FontWeight::MEDIUM).child(choice.name()))
+                        .min_w_0()
+                        .gap_0p5()
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_weight(FontWeight::MEDIUM)
+                                .when(remote, |name| {
+                                    name.font_family(cx.theme().mono_font_family.clone())
+                                })
+                                .truncate()
+                                .child(choice.name()),
+                        )
                         .child(
                             div()
                                 .text_xs()
@@ -247,6 +326,7 @@ impl SetupView {
                 )
                 .child(marker)
         });
+        let list_height = MACHINE_ROW_HEIGHT * count.min(VISIBLE_MACHINES) as f32;
         let alert = failure.map(|failure| {
             let server = self.server.clone();
             error_alert(
@@ -277,130 +357,163 @@ impl SetupView {
                 });
             }));
         (
-            "Where should ricochet run?".into(),
-            "Pick a computer. Ricochet is managed over SSH on other computers, using the keys you already have.".into(),
+            "Install location".into(),
+            "Choose where to install ricochet. Either on this machine or one accessible via SSH."
+                .into(),
             v_flex()
                 .gap_6()
                 .children(alert)
-                .child(v_flex().gap_2().children(rows))
+                .child(
+                    v_flex()
+                        .relative()
+                        .border_1()
+                        .border_color(cx.theme().border)
+                        .bg(Palette::card(cx))
+                        .child(
+                            v_flex()
+                                .id("machines")
+                                .h(px(list_height))
+                                .overflow_y_scroll()
+                                .track_scroll(&self.machine_scroll)
+                                .children(rows),
+                        )
+                        .vertical_scrollbar(&self.machine_scroll),
+                )
                 .child(field(
-                    "Add another computer",
-                    Some("An alias from your SSH config, or user@host. It must log in without a password prompt.".into()),
-                    h_flex().gap_2().child(v_flex().flex_1().min_w_0().child(gpui_component::input::Input::new(&self.host_input))).child(connect),
+                    "Add machine",
+                    Some("Enter an SSH config alias or user@host. Use key-based login.".into()),
+                    h_flex()
+                        .gap_2()
+                        .child(
+                            v_flex()
+                                .flex_1()
+                                .min_w_0()
+                                .child(gpui_component::input::Input::new(&self.host_input)),
+                        )
+                        .child(connect),
                     cx,
                 ))
                 .into_any_element(),
         )
     }
 
-    fn server_step(&self, cx: &mut Context<Self>) -> (String, String, AnyElement) {
-        let managed = self.config.authentication.managed;
-        let description = if managed {
-            "Managed sign-in needs this port. Choose your own identity provider to change it."
-                .to_owned()
-        } else {
-            format!("Ricochet will answer at {}.", self.config.local_url())
-        };
+    fn license_step(&self, cx: &mut Context<Self>) -> (String, String, AnyElement) {
         (
-            "Where should ricochet listen?".into(),
-            "The defaults work for most people.".into(),
-            v_flex()
-                .gap_5()
-                .child(field(
-                    "Port",
-                    Some(description),
-                    gpui_component::input::Input::new(&self.inputs["server.port"])
-                        .disabled(managed),
-                    cx,
-                ))
-                .child(self.text_field(
-                    "License key",
-                    "server.license_key",
-                    Some("Optional. Leave this empty to use the Community Edition."),
-                    cx,
-                ))
-                .into_any_element(),
+            "Have a license?".into(),
+            "No worries if not. The `Community Edition` is a great place to start.".into(),
+            field(
+                "License key",
+                None,
+                gpui_component::input::Input::new(&self.inputs["server.license_key"]),
+                cx,
+            )
+            .into_any_element(),
         )
     }
 
     fn review_step(&self, cx: &mut Context<Self>) -> (String, String, AnyElement) {
         let auth = &self.config.authentication;
-        let signin = if auth.managed {
-            "Managed auth".to_owned()
+        let server = self.server.read(cx);
+        let remote = server.connection.is_remote();
+        let machine = server.connection.name();
+        let (auth_icon, signin) = if auth.managed {
+            ("shield-check", "Managed".to_owned())
         } else {
-            auth.issuer()
+            ("key", auth.issuer())
         };
         let license = if self.config.server.license_key.non_empty().is_some() {
-            "Your license key"
+            "License key added"
         } else {
             "Community Edition"
         };
         let rows = [
-            ("Computer", self.server.read(cx).connection.name()),
-            ("Sign-in", signin),
-            ("Address", self.config.local_url()),
-            ("License", license.to_owned()),
+            (
+                if remote { "hard-drives" } else { "desktop" },
+                "Machine",
+                machine.clone(),
+            ),
+            (auth_icon, "Authentication", signin),
+            ("file-text", "License", license.to_owned()),
         ];
-        let count = rows.len();
-        (
-            "Ready to install".into(),
-            "Ricochet downloads the server, then starts it in the background.".into(),
-            v_flex()
+        let summary = v_flex()
+            .border_1()
+            .border_color(cx.theme().border)
+            .bg(Palette::card(cx))
+            .children(
+                rows.into_iter()
+                    .enumerate()
+                    .map(|(i, (icon, label, value))| {
+                        h_flex()
+                            .gap_3()
+                            .px_4()
+                            .py_3()
+                            .items_center()
+                            .when(i > 0, |row| {
+                                row.border_t_1().border_color(cx.theme().border)
+                            })
+                            .child(ph(icon).size_4().text_color(cx.theme().muted_foreground))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .text_sm()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(label),
+                            )
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_sm()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child(value),
+                            )
+                    }),
+            );
+        let keep_running = remote.then(|| {
+            h_flex()
+                .gap_4()
+                .px_4()
+                .py_3()
+                .items_center()
                 .border_1()
                 .border_color(cx.theme().border)
-                .children(rows.into_iter().enumerate().map(|(i, (label, value))| {
-                    h_flex()
-                        .justify_between()
-                        .gap_4()
-                        .px_4()
-                        .py_3()
-                        .when(i + 1 < count, |row| {
-                            row.border_b_1().border_color(cx.theme().border)
-                        })
+                .bg(Palette::card(cx))
+                .child(
+                    v_flex()
+                        .flex_1()
+                        .min_w_0()
+                        .gap_0p5()
                         .child(
                             div()
                                 .text_sm()
+                                .font_weight(FontWeight::MEDIUM)
+                                .child("Keep running after you log out"),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(label),
-                        )
-                        .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(value))
-                }))
-                .child(
-                    h_flex()
-                        .when(!self.server.read(cx).connection.is_remote(), |row| {
-                            row.hidden()
-                        })
-                        .gap_4()
-                        .items_start()
-                        .justify_between()
-                        .pt_4()
-                        .child(
-                            v_flex()
-                                .gap_1()
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .child("Keep running after I log out"),
-                                )
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child(
-                                            "Turns on lingering for your account on that computer.",
-                                        ),
-                                ),
-                        )
-                        .child(
-                            gpui_component::switch::Switch::new("keep-running")
-                                .checked(self.keep_running)
-                                .on_click(cx.listener(|this, checked: &bool, _, cx| {
-                                    this.keep_running = *checked;
-                                    cx.notify();
-                                })),
+                                .child(prose(format!(
+                                    "Without this, systemd stops ricochet when you log out of {machine}."
+                                ))),
                         ),
                 )
+                .child(
+                    gpui_component::switch::Switch::new("keep-running")
+                        .checked(self.keep_running)
+                        .on_click(cx.listener(|this, checked: &bool, _, cx| {
+                            this.keep_running = *checked;
+                            cx.notify();
+                        })),
+                )
+        });
+        (
+            "Ready to install".into(),
+            "This app downloads ricochet and starts it in the background.".into(),
+            v_flex()
+                .gap_3()
+                .child(summary)
+                .children(keep_running)
                 .into_any_element(),
         )
     }
@@ -449,7 +562,7 @@ impl SetupView {
                             } else {
                                 cx.theme().foreground
                             })
-                            .child(*label),
+                            .child(prose(*label)),
                     )
             }));
         let alert = failure.map(|failure| {
@@ -463,12 +576,12 @@ impl SetupView {
         });
         (
             if alert.is_some() {
-                "That didn't work".to_owned()
+                "Install failed".to_owned()
             } else {
                 "Installing ricochet".to_owned()
             },
             if alert.is_some() {
-                "Fix what the message says, then try again.".to_owned()
+                "Fix the error below and try again.".to_owned()
             } else {
                 "This usually takes under a minute.".to_owned()
             },
@@ -487,15 +600,16 @@ impl SetupView {
             h_flex()
                 .gap_3()
                 .items_center()
-                .p_4()
-                .border_1()
+                .pl_4()
+                .pr_4()
+                .py_3()
+                .bg(cx.theme().success.opacity(0.08))
+                .border_l_2()
                 .border_color(cx.theme().success)
-                .child(ph("check-circle").size_6().text_color(cx.theme().success))
-                .child(
-                    div()
-                        .text_sm()
-                        .child("Everything is set up. It starts again whenever you log in."),
-                )
+                .child(ph("check-circle").size_5().text_color(cx.theme().success))
+                .child(div().text_sm().child(prose(
+                    "ricochet runs in the background and restarts automatically.",
+                )))
                 .into_any_element(),
         )
     }
@@ -539,7 +653,7 @@ impl SetupView {
             Step::Welcome => (
                 Some(
                     Button::new("advanced")
-                        .label("Advanced setup")
+                        .label("Skip to settings")
                         .ghost()
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.onboarding = None;
@@ -556,14 +670,14 @@ impl SetupView {
                     next(
                         "Continue",
                         "arrow-right",
-                        Step::Server,
-                        c.authentication.problem(),
+                        Step::License,
+                        self.sign_in_problem(),
                         cx,
                     )
                     .into_any_element(),
                 ),
             ),
-            Step::Server => (
+            Step::License => (
                 Some(back(Step::SignIn, cx).into_any_element()),
                 Some(
                     next(
@@ -577,7 +691,7 @@ impl SetupView {
                 ),
             ),
             Step::Review => (
-                Some(back(Step::Server, cx).into_any_element()),
+                Some(back(Step::License, cx).into_any_element()),
                 Some(
                     Button::new("wizard-install")
                         .label(if self.server.read(cx).installed.is_some() {
@@ -610,7 +724,7 @@ impl SetupView {
                 (
                     Some(
                         Button::new("wizard-finish")
-                            .label("Go to settings")
+                            .label("Open settings")
                             .ghost()
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.onboarding = None;
@@ -620,8 +734,8 @@ impl SetupView {
                     ),
                     Some(
                         Button::new("wizard-open")
-                            .label("Open ricochet")
                             .icon(ph("arrow-square-out"))
+                            .child(prose("Open ricochet"))
                             .primary()
                             .on_click(move |_, _, cx| {
                                 server.update(cx, |server, cx| server.open_dashboard(cx))
@@ -633,7 +747,7 @@ impl SetupView {
         };
         let problem = self.problem.as_ref().map(|problem| {
             error_alert(
-                "Check your answers",
+                "Fix these settings",
                 problem,
                 cx.listener(|this, _, _, cx| {
                     this.problem = None;
@@ -643,10 +757,10 @@ impl SetupView {
             )
         });
         v_flex().border_t_1().border_color(cx.theme().border).child(
-            h_flex().w_full().justify_center().px_6().py_4().child(
+            h_flex().w_full().justify_center().px_8().py_4().child(
                 v_flex()
                     .w_full()
-                    .max_w(px(if step == Step::SignIn { 640.0 } else { 480.0 }))
+                    .max_w(px(step.width()))
                     .gap_3()
                     .children(problem)
                     .child(

@@ -25,10 +25,20 @@ pub struct PackageSettings {
     pub allow_overrides: bool,
 }
 
+impl PackageSettings {
+    /// ricochet's own R repository when `[repositories.r]` is absent.
+    pub fn default_r() -> Vec<RRepository> {
+        vec![RRepository {
+            name: "CRAN".into(),
+            url: "https://cran.rpkgs.com".into(),
+        }]
+    }
+}
+
 impl Default for PackageSettings {
     fn default() -> Self {
         Self {
-            r: Vec::new(),
+            r: Self::default_r(),
             julia: Vec::new(),
             python: Vec::new(),
             allow_overrides: true,
@@ -71,7 +81,7 @@ impl SettingsSection for PackageSettings {
                     })
                     .collect()
             })
-            .unwrap_or_default();
+            .unwrap_or_else(Self::default_r);
         r.sort_by(|a, b| a.name.cmp(&b.name));
         Self {
             r,
@@ -89,7 +99,7 @@ impl SettingsSection for PackageSettings {
         for repository in sorted {
             named.insert(repository.name.trimmed(), value(repository.url.trimmed()));
         }
-        if named.is_empty() {
+        if named.is_empty() || self.r == Self::default_r() {
             repositories.remove("r");
         } else {
             repositories.insert("r", Item::Table(named));
@@ -122,7 +132,7 @@ impl SettingsSection for PackageSettings {
             .map(|repository| repository.name.trimmed())
             .collect();
         if names.len() != self.r.len() {
-            return Some("Give each R repository a different name.".into());
+            return Some("R repository names must be unique.".into());
         }
         let any_bad = self
             .r
@@ -132,7 +142,7 @@ impl SettingsSection for PackageSettings {
             .chain(self.python.iter().map(|index| &index.url))
             .any(|url| !url.is_http_url());
         if any_bad {
-            return Some("Start every repository URL with https://.".into());
+            return Some("Repository URLs must start with https://.".into());
         }
         None
     }

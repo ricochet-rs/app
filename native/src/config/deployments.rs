@@ -41,10 +41,10 @@ impl SettingsSection for DeploymentSettings {
 
     fn problem(&self) -> Option<String> {
         if !self.max_deployments.is_empty_or_positive() {
-            return Some("Enter how many deployments to keep as a whole number.".into());
+            return Some("Deployment history must be a whole number.".into());
         }
         if !self.max_age_days.is_empty_or_positive() {
-            return Some("Enter the deployment age limit as a whole number of days.".into());
+            return Some("Deployment retention must be a whole number of days.".into());
         }
         if let Some(size) = self.max_bundle_size.non_empty() {
             let number: String = size
@@ -54,7 +54,7 @@ impl SettingsSection for DeploymentSettings {
             let unit = size[number.len()..].trim().to_lowercase();
             const UNITS: [&str; 10] = ["", "b", "kb", "mb", "gb", "tb", "kib", "mib", "gib", "tib"];
             if number.parse::<f64>().is_err() || !UNITS.contains(&unit.as_str()) {
-                return Some("Enter the largest bundle as a size, such as 100MB or 1GB.".into());
+                return Some("Max bundle size must be a size, such as 100MB or 1GB.".into());
             }
         }
         None

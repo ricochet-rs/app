@@ -14,10 +14,11 @@ pub enum SetupSection {
     Logging,
     AuditLog,
     Telemetry,
+    DangerZone,
 }
 
 impl SetupSection {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Authentication,
         Self::Server,
         Self::Users,
@@ -28,19 +29,31 @@ impl SetupSection {
         Self::Logging,
         Self::AuditLog,
         Self::Telemetry,
+        Self::DangerZone,
     ];
 
-    pub fn is_required(self) -> bool {
-        matches!(self, Self::Authentication | Self::Server)
-    }
+    /// The pages in the sidebar's Server submenu.
+    pub const SERVER_PAGES: [Self; 3] = [Self::Server, Self::Logging, Self::DangerZone];
+
+    /// The pages in the sidebar's Optional group.
+    pub const OPTIONAL: [Self; 7] = [
+        Self::Users,
+        Self::Email,
+        Self::Packages,
+        Self::Deployments,
+        Self::Tasks,
+        Self::AuditLog,
+        Self::Telemetry,
+    ];
 
     pub fn title(self) -> &'static str {
         match self {
             Self::Authentication => "Authentication",
             Self::Server => "Server",
+            Self::DangerZone => "Danger zone",
             Self::Users => "Users",
             Self::Email => "Email",
-            Self::Packages => "Packages",
+            Self::Packages => "Package installation",
             Self::Deployments => "Deployments",
             Self::Tasks => "Tasks",
             Self::Logging => "Logging",
@@ -62,31 +75,36 @@ impl SetupSection {
             Self::Logging => "file-text",
             Self::AuditLog => "clipboard-text",
             Self::Telemetry => "pulse",
+            Self::DangerZone => "warning",
         }
     }
 
-    pub fn summary(self) -> Option<&'static str> {
+    /// What the pane is for, given the SSH host ricochet runs on, or `None` for this machine.
+    pub fn summary(self, remote_host: Option<&str>) -> Option<String> {
+        if self == Self::Server {
+            return Some(match remote_host {
+                Some(host) => format!("Ricochet runs on {host} as a systemd service."),
+                None if cfg!(target_os = "macos") => {
+                    "Ricochet runs on this machine whenever you're logged in.".to_owned()
+                }
+                None => "Ricochet runs on this machine as a systemd service.".to_owned(),
+            });
+        }
+        self.fixed_summary().map(str::to_owned)
+    }
+
+    fn fixed_summary(self) -> Option<&'static str> {
         match self {
-            Self::Authentication => None,
-            Self::Server => Some("Ricochet runs on this computer whenever you're logged in."),
-            Self::Users => Some("Change each person's role, and choose the role new people get."),
-            Self::Email => Some(
-                "Ricochet sends email through this mail server, such as notices about failed deployments.",
-            ),
-            Self::Packages => {
-                Some("Choose where ricochet installs R, Julia, and Python packages from.")
-            }
-            Self::Deployments => Some(
-                "Choose how many old deployments ricochet keeps and the largest bundle people can deploy.",
-            ),
-            Self::Tasks => Some("Choose how long ricochet lets a task or a package install run."),
-            Self::Logging => Some("Ricochet writes its logs to ~/.local/share/ricochet/logs."),
-            Self::AuditLog => {
-                Some("Ricochet records who changed what. Choose how long it keeps those records.")
-            }
-            Self::Telemetry => {
-                Some("Ricochet sends traces to an OpenTelemetry collector over gRPC.")
-            }
+            Self::Authentication | Self::Server => None,
+            Self::Users => Some("Manage user roles and access."),
+            Self::Email => Some("Configure the mail server for notifications."),
+            Self::Packages => Some("Manage default package repository sources and overrides."),
+            Self::Deployments => Some("Manage deployment history and bundle size limits."),
+            Self::Tasks => Some("Manage task and package install limits."),
+            Self::Logging => Some("ricochet writes its logs to `~/.local/share/ricochet/logs`."),
+            Self::AuditLog => Some("Manage audit log retention and storage."),
+            Self::Telemetry => Some("Export traces to an OpenTelemetry collector over gRPC."),
+            Self::DangerZone => Some("Browse ricochet's files, delete its data, or uninstall it."),
         }
     }
 
@@ -102,6 +120,7 @@ impl SetupSection {
             Self::Logging => config.logging.problem(),
             Self::AuditLog => config.audit_log.problem(),
             Self::Telemetry => config.telemetry.problem(),
+            Self::DangerZone => None,
         }
     }
 

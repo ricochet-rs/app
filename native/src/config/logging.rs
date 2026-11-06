@@ -86,10 +86,10 @@ impl SettingsSection for LoggingSettings {
 
     fn problem(&self) -> Option<String> {
         if !self.max_files.is_empty_or_positive() {
-            return Some("Enter how many log files to keep as a whole number.".into());
+            return Some("Max log files must be a whole number.".into());
         }
         if !self.max_age_days.is_empty_or_positive() {
-            return Some("Enter the log age limit as a whole number of days.".into());
+            return Some("File retention must be a whole number of days.".into());
         }
         None
     }

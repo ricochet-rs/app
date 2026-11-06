@@ -6,22 +6,22 @@ pub enum AppError {
     #[error("{0}")]
     UserCommand(String),
     #[error(
-        "Ricochet can't read line {line} of ricochet-config.toml: {reason}. Fix the file, then save again."
+        "Line {line} of ricochet-config.toml is invalid: {reason}. Fix the file and save again."
     )]
     InvalidConfig { line: usize, reason: String },
-    #[error("Ricochet can't find {0}, so it can't start inside its sandbox.")]
+    #[error("ricochet can't start in its sandbox because {0} is missing.")]
     SandboxUnavailable(PathBuf),
-    #[error("Another app is using port {0}. Choose a different port.")]
+    #[error("Port {0} is in use. Choose another port.")]
     PortInUse(u16),
-    #[error("Ricochet couldn't download {0}. Check your internet connection and try again.")]
+    #[error("Couldn't download {0}. Check your internet connection and try again.")]
     Download(String),
-    #[error("Ricochet couldn't start in the background. {0}")]
+    #[error("Couldn't start ricochet in the background. {0}")]
     Service(String),
     #[error("{0}")]
     Connection(String),
     #[error("{}", did_not_start(.0))]
     DidNotStart(String),
-    #[error("Ricochet doesn't publish a server for this computer yet.")]
+    #[error("ricochet has no server build for this machine yet.")]
     UnsupportedPlatform,
     #[error("{0}")]
     Io(#[from] std::io::Error),
@@ -29,7 +29,7 @@ pub enum AppError {
 
 fn did_not_start(log: &str) -> String {
     if log.is_empty() {
-        "Ricochet didn't respond within a minute. Select Show logs for details.".into()
+        "ricochet didn't respond within a minute. Check Server > Logging > Live for details.".into()
     } else {
         format!("Ricochet stopped before it was ready:\n{log}")
     }

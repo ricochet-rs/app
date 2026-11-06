@@ -16,7 +16,7 @@ pub enum Connection {
 impl Connection {
     pub fn name(&self) -> String {
         match self {
-            Self::Local => "This computer".into(),
+            Self::Local => "This machine".into(),
             Self::Ssh { host } => host.clone(),
         }
     }

@@ -16,6 +16,10 @@ run: app
     while pgrep -x Ricochet > /dev/null; do sleep 0.1; done
     open dist/Ricochet.app
 
+# Build and run the cross-platform app in native/
+native:
+    cargo run --manifest-path native/Cargo.toml --bin native
+
 # Compile the app
 build:
     swift build -c release --arch arm64 {{ manifest_flags }}

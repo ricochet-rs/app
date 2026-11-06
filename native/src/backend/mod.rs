@@ -13,10 +13,65 @@ use crate::paths::Paths;
 use crate::release::Release;
 use crate::service::Service;
 use crate::shell::Shell;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+/// Data in ricochet's home folder that can be deleted while ricochet stays installed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Data {
+    Cache,
+    Database,
+    Content,
+}
+
+impl Data {
+    pub const ALL: [Self; 3] = [Self::Cache, Self::Database, Self::Content];
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Cache => "Package cache",
+            Self::Database => "Database",
+            Self::Content => "Content",
+        }
+    }
+
+    /// The files and folders under ricochet's `home` that hold this data.
+    pub fn paths(self, home: &Path) -> Vec<PathBuf> {
+        match self {
+            Self::Cache => vec![home.join(".cache")],
+            Self::Database => [
+                "ricochet.sqlite3",
+                "ricochet.sqlite3-shm",
+                "ricochet.sqlite3-wal",
+            ]
+            .iter()
+            .map(|name| home.join(name))
+            .collect(),
+            Self::Content => vec![home.join("content")],
+        }
+    }
+}
+
+/// One file or folder in a listing.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DirEntry {
+    pub name: String,
+    pub is_dir: bool,
+    pub size: u64,
+    /// Seconds since the Unix epoch.
+    pub modified: Option<i64>,
+}
+
+/// Folders first, then by name.
+pub fn sort_entries(entries: &mut [DirEntry]) {
+    entries.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+}
+
 pub trait Backend: Send + Sync {
-    fn is_remote(&self) -> bool;
     /// Paths on that computer.
     fn paths(&self) -> &Paths;
     fn shell(&self) -> &dyn Shell;
@@ -28,12 +83,14 @@ pub trait Backend: Send + Sync {
     fn install_release(&self, release: &Release) -> Result<()>;
     /// Creates ricochet's folder and puts the files this app ships in it.
     fn prepare(&self) -> Result<()>;
-    /// Moves ricochet and its data aside rather than deleting them, because that folder holds the only keys that decrypt its environment variables.
+    /// Removes ricochet, its data and its encryption keys: to the Trash where there is one, for good on a Linux server.
     fn uninstall(&self) -> Result<()>;
+    /// The files and folders directly inside `path` on that computer.
+    fn list_dir(&self, path: &Path) -> Result<Vec<DirEntry>>;
+    /// Removes `paths` on that computer, skipping any that don't exist.
+    fn remove_data(&self, paths: &[PathBuf]) -> Result<()>;
     /// Opens ricochet in a browser on this computer.
     fn open_dashboard(&self, port: u16) -> Result<()>;
-    /// Opens the logs, returning whether this computer can show them.
-    fn open_logs(&self) -> bool;
     /// Keeps ricochet running after you log out of that computer.
     fn keep_running_after_logout(&self) -> Result<()> {
         Ok(())

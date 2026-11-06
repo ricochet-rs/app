@@ -75,6 +75,8 @@ pub struct ServerController {
     pub generation: u64,
     /// Whether the last-used SSH computer is still being reached on launch.
     pub loading: bool,
+    /// Whether `installed` and `status` still await their first full read on this computer.
+    pub checking: bool,
 }
 
 impl ServerController {
@@ -103,6 +105,7 @@ impl ServerController {
             saved,
             generation: 0,
             loading: reconnect,
+            checking: true,
         };
         cx.spawn(async move |this, cx| Self::watch(this, cx).await)
             .detach();
@@ -137,7 +140,7 @@ impl ServerController {
             if let Err(error) = opened {
                 let _ = this.update(cx, |this, cx| {
                     this.failure = Some(Failure {
-                        title: "Ricochet couldn't open".into(),
+                        title: "Couldn't open ricochet".into(),
                         message: error.to_string(),
                     });
                     cx.notify();
@@ -145,14 +148,6 @@ impl ServerController {
             }
         })
         .detach();
-    }
-
-    pub fn open_logs(&self) {
-        self.backend.open_logs();
-    }
-
-    pub fn can_open_logs(&self) -> bool {
-        !self.backend.is_remote()
     }
 
     pub fn available_update(&self) -> Option<Release> {
@@ -168,7 +163,7 @@ impl ServerController {
     /// Logs in to `connection` and shows what ricochet looks like there.
     pub fn switch(&mut self, connection: Connection, cx: &mut Context<Self>) {
         let activity = format!("Connecting to {}", connection.name());
-        self.perform(&activity, "Ricochet couldn't connect", cx, move |_, _| {
+        self.perform(&activity, "Couldn't connect", cx, move |_, _| {
             let backend = connection.connect()?;
             let saved = backend.load_config();
             Ok(Update {
@@ -186,7 +181,7 @@ impl ServerController {
         let installed = self.installed.is_some();
         self.perform(
             "Checking your settings",
-            "Ricochet didn't finish setting up",
+            "Setup failed",
             cx,
             move |backend, progress| {
                 let port = config.server.proxy_port().ok_or(AppError::PortInUse(0))?;
@@ -264,27 +259,22 @@ impl ServerController {
     pub fn update_to(&mut self, release: Release, cx: &mut Context<Self>) {
         let port = self.proxy_port.unwrap_or(DEFAULT_PORT);
         let activity = format!("Updating to ricochet {}", release.version);
-        self.perform(
-            &activity,
-            "Ricochet didn't finish updating",
-            cx,
-            move |backend, _| {
-                backend.install_release(&release)?;
-                backend.prepare()?;
-                if backend.service().is_loaded() {
-                    backend.service().restart()?;
-                    backend.wait_until_running(port)?;
-                }
-                Ok(Update::default())
-            },
-        );
+        self.perform(&activity, "Update failed", cx, move |backend, _| {
+            backend.install_release(&release)?;
+            backend.prepare()?;
+            if backend.service().is_loaded() {
+                backend.service().restart()?;
+                backend.wait_until_running(port)?;
+            }
+            Ok(Update::default())
+        });
     }
 
     /// Downloads the latest ricochet-server without configuring or starting it, which **Install and start** does later.
     pub fn install(&mut self, cx: &mut Context<Self>) {
         self.perform(
             "Checking for the latest ricochet",
-            "This app couldn't install ricochet",
+            "Install failed",
             cx,
             |backend, progress| {
                 backend.install_latest(&|activity| progress.activity(activity))?;
@@ -297,7 +287,7 @@ impl ServerController {
     pub fn uninstall(&mut self, cx: &mut Context<Self>) {
         self.perform(
             "Uninstalling ricochet",
-            "Ricochet didn't finish uninstalling",
+            "Uninstall failed",
             cx,
             |backend, _| {
                 backend.service().remove()?;
@@ -307,6 +297,30 @@ impl ServerController {
                     proxy_port: Some(None),
                     ..Update::default()
                 })
+            },
+        );
+    }
+
+    /// Stops ricochet, removes `data` from its home folder, then starts it again if it was running.
+    pub fn delete_data(&mut self, data: Vec<crate::backend::Data>, cx: &mut Context<Self>) {
+        let port = self.proxy_port.unwrap_or(DEFAULT_PORT);
+        self.perform(
+            "Deleting ricochet's data",
+            "Couldn't delete the data",
+            cx,
+            move |backend, _| {
+                let was_running = backend.service().is_loaded();
+                if was_running {
+                    backend.service().stop()?;
+                }
+                let home = backend.paths().home.clone();
+                let paths: Vec<_> = data.iter().flat_map(|item| item.paths(&home)).collect();
+                backend.remove_data(&paths)?;
+                if was_running {
+                    backend.service().start()?;
+                    backend.wait_until_running(port)?;
+                }
+                Ok(Update::default())
             },
         );
     }
@@ -374,6 +388,7 @@ impl ServerController {
                     self.connection = connection;
                     self.installed = None;
                     self.status = ServerStatus::Stopped;
+                    self.checking = true;
                 }
                 if let Some(saved) = update.saved {
                     self.saved = saved;
@@ -419,6 +434,9 @@ impl ServerController {
                 if this.activity.is_none() {
                     this.installed = installed;
                     this.status = status;
+                    if full {
+                        this.checking = false;
+                    }
                 }
                 cx.notify();
             });

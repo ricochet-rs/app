@@ -377,6 +377,15 @@ client_secret = "secret"
     }
 
     #[test]
+    fn the_default_r_repository_shows_but_is_never_written() {
+        let config = ServerConfig::default();
+        assert_eq!(config.packages.r, PackageSettings::default_r());
+        let saved = save(&config, "").to_string();
+        assert!(!saved.contains("[repositories.r]"), "{saved}");
+        assert!(!saved.contains("cran.rpkgs.com"), "{saved}");
+    }
+
+    #[test]
     fn a_broken_config_names_the_line() {
         let error = ServerConfig::default()
             .render("ok = 1\nbroken = = 2\n", 6188, Path::new("/home"), &|_| {

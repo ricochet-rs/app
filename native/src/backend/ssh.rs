@@ -1,5 +1,5 @@
-use super::Backend;
 use super::local::LocalBackend;
+use super::{Backend, DirEntry, sort_entries};
 use crate::command::CommandResult;
 use crate::error::{AppError, Result};
 use crate::paths::Paths;
@@ -26,28 +26,57 @@ pub fn is_valid_host(host: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || ".-_@:[]%".contains(c))
 }
 
+/// One line of `find -printf '%y\t%s\t%T@\t%f\n'`: type, size, modified time and name.
+fn parse_find_line(line: &str) -> Option<DirEntry> {
+    let mut fields = line.splitn(4, '\t');
+    let kind = fields.next()?;
+    let size = fields.next()?.parse().unwrap_or(0);
+    let modified = fields
+        .next()?
+        .split('.')
+        .next()
+        .and_then(|seconds| seconds.parse().ok());
+    let name = fields.next()?.to_owned();
+    Some(DirEntry {
+        name,
+        is_dir: kind == "d",
+        size,
+        modified,
+    })
+}
+
+/// `text` with every character an extended regular expression treats specially escaped.
+fn regex_escape(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for c in text.chars() {
+        if r"\.^$|?*+()[]{}".contains(c) {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    escaped
+}
+
 /// What went wrong reaching `host`, from the text `ssh` printed, in words for the person using the app.
 pub fn explain_ssh_error(host: &str, stderr: &str) -> String {
     let text = stderr.to_lowercase();
     if text.contains("could not resolve hostname") {
-        format!(
-            "Ricochet can't find a computer called {host}. Check the name, or add it to your SSH config."
-        )
+        format!("Can't find {host}. Check the name or add it to your SSH config.")
     } else if text.contains("permission denied") {
         format!(
             "{host} refused the login. Make sure `ssh {host}` signs in with a key and no password."
         )
     } else if text.contains("host key verification failed") {
         format!(
-            "Your computer doesn't trust {host} yet. Run `ssh {host}` once in a terminal to accept its host key."
+            "This machine doesn't trust {host} yet. Run `ssh {host}` once in a terminal to accept its host key."
         )
     } else if text.contains("connection refused")
         || text.contains("timed out")
         || text.contains("no route to host")
     {
-        format!("Ricochet can't reach {host}. Check that it is on and that SSH is running.")
+        format!("Can't reach {host}. Check that it's online and running SSH.")
     } else {
-        format!("Ricochet couldn't connect to {host}. {}", stderr.trim())
+        format!("Couldn't connect to {host}. {}", stderr.trim())
     }
 }
 
@@ -61,7 +90,7 @@ impl SshShell {
     pub fn new(host: &str) -> Result<Self> {
         if !is_valid_host(host) {
             return Err(AppError::Connection(format!(
-                "`{host}` isn't an SSH host name. Use an alias from your SSH config or user@host."
+                "`{host}` isn't an SSH host. Use an SSH config alias or user@host."
             )));
         }
         let control_dir = dirs::cache_dir()
@@ -226,24 +255,71 @@ impl SshBackend {
             let _ = child.kill();
         }
         *tunnel = None;
-        let mut child = Command::new("ssh")
+        let forward = format!("{port}:localhost:{port}");
+        // A shared master would take over the forward and let this ssh exit, so release any it holds.
+        let _ = Command::new("ssh")
             .args(self.shell.options())
-            .args(["-N", "-o", "ExitOnForwardFailure=yes", "-L"])
-            .arg(format!("{port}:localhost:{port}"))
+            .args(["-O", "cancel", "-L", &forward])
             .arg(&self.host)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        let leftover = format!(
+            "ssh -o ControlMaster=no -o ControlPath=none .* -L {} {} cat",
+            regex_escape(&forward),
+            regex_escape(&self.host)
+        );
+        let _ = Command::new("pkill")
+            .args(["-f", &leftover])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        let local = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+        let port_taken = || {
+            AppError::Connection(format!(
+                "Another app is using port {port}. Stop it, or stop ricochet on this machine, and try again."
+            ))
+        };
+        if std::net::TcpStream::connect_timeout(&local, Duration::from_millis(200)).is_ok() {
+            return Err(port_taken());
+        }
+        // ssh keeps the first value it reads for an option, so these override the shared master in `options`.
+        let mut child = Command::new("ssh")
+            .args(["-o", "ControlMaster=no", "-o", "ControlPath=none"])
+            .args(self.shell.options())
+            .args(["-T", "-o", "ExitOnForwardFailure=yes", "-L", &forward])
+            .arg(&self.host)
+            // The remote `cat` ends when this app's end of stdin closes, so the tunnel never outlives the app.
+            .arg("cat > /dev/null")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()?;
-        std::thread::sleep(Duration::from_millis(900));
-        if matches!(child.try_wait(), Ok(None)) {
-            *tunnel = Some((port, child));
-            return Ok(());
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while std::time::Instant::now() < deadline {
+            if !matches!(child.try_wait(), Ok(None)) {
+                break;
+            }
+            if std::net::TcpStream::connect_timeout(&local, Duration::from_millis(200)).is_ok() {
+                *tunnel = Some((port, child));
+                return Ok(());
+            }
+            std::thread::sleep(Duration::from_millis(100));
         }
-        Err(AppError::Connection(format!(
-            "Couldn't forward port {port} from {}. Another app on this computer may be using it.",
-            self.host
-        )))
+        if matches!(child.try_wait(), Ok(None)) {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        let mut stderr = String::new();
+        if let Some(mut pipe) = child.stderr.take() {
+            let _ = io::Read::read_to_string(&mut pipe, &mut stderr);
+        }
+        if stderr.contains("Address already in use") || stderr.contains("cannot listen to port") {
+            return Err(port_taken());
+        }
+        Err(AppError::Connection(explain_ssh_error(&self.host, &stderr)))
     }
 }
 
@@ -261,10 +337,6 @@ impl Drop for SshBackend {
 }
 
 impl Backend for SshBackend {
-    fn is_remote(&self) -> bool {
-        true
-    }
-
     fn paths(&self) -> &Paths {
         &self.paths
     }
@@ -341,16 +413,36 @@ impl Backend for SshBackend {
         Ok(())
     }
 
+    /// Deletes ricochet's folder and binary, because a Linux server has no Trash to move them to.
     fn uninstall(&self) -> Result<()> {
-        let items: Vec<String> = [&self.paths.home, &self.paths.binary]
+        self.remove_data(&[self.paths.home.clone(), self.paths.binary.clone()])
+    }
+
+    fn list_dir(&self, path: &Path) -> Result<Vec<DirEntry>> {
+        let script = format!(
+            "find {} -mindepth 1 -maxdepth 1 -printf '%y\\t%s\\t%T@\\t%f\\n'",
+            sh_quote(&path.to_string_lossy())
+        );
+        let result = self.shell.sh(&script)?;
+        if !result.success {
+            return Err(AppError::UserCommand(result.output()));
+        }
+        let mut entries: Vec<DirEntry> =
+            result.stdout.lines().filter_map(parse_find_line).collect();
+        sort_entries(&mut entries);
+        Ok(entries)
+    }
+
+    /// Deletes `paths` for good, because a Linux server has no Trash to move them to.
+    fn remove_data(&self, paths: &[PathBuf]) -> Result<()> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let quoted: Vec<String> = paths
             .iter()
             .map(|path| sh_quote(&path.to_string_lossy()))
             .collect();
-        let script = format!(
-            "set -e; ts=$(date +%s); for p in {}; do if [ -e \"$p\" ]; then mv \"$p\" \"$p.removed-$ts\"; fi; done",
-            items.join(" ")
-        );
-        let result = self.shell.sh(&script)?;
+        let result = self.shell.sh(&format!("rm -rf -- {}", quoted.join(" ")))?;
         if result.success {
             Ok(())
         } else {
@@ -362,10 +454,6 @@ impl Backend for SshBackend {
         self.ensure_tunnel(port)?;
         let _ = open::that(format!("http://localhost:{port}"));
         Ok(())
-    }
-
-    fn open_logs(&self) -> bool {
-        false
     }
 
     fn keep_running_after_logout(&self) -> Result<()> {
@@ -396,7 +484,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .starts_with("Ricochet can't find a computer called ricochet-test.invalid."),
+                .starts_with("Can't find ricochet-test.invalid."),
             "{error}"
         );
     }
@@ -407,8 +495,7 @@ mod tests {
         assert!(say("Permission denied (publickey).").contains("refused the login"));
         assert!(say("Host key verification failed.").contains("host key"));
         assert!(
-            say("ssh: connect to host devbox port 22: Connection refused")
-                .contains("can't reach")
+            say("ssh: connect to host devbox port 22: Connection refused").contains("Can't reach")
         );
         assert!(say("something odd").ends_with("something odd"));
     }
@@ -421,5 +508,23 @@ mod tests {
         assert!(!is_valid_host("-oProxyCommand=evil"));
         assert!(!is_valid_host("host; rm -rf /"));
         assert!(!is_valid_host(""));
+    }
+
+    #[test]
+    fn find_lines_become_entries() {
+        let entry = parse_find_line("d\t4096\t1762455300.1234567890\tcontent").unwrap();
+        assert_eq!(entry.name, "content");
+        assert!(entry.is_dir);
+        assert_eq!(entry.modified, Some(1762455300));
+        let file = parse_find_line("f\t323584\t1762457760.0\tricochet.sqlite3").unwrap();
+        assert!(!file.is_dir);
+        assert_eq!(file.size, 323584);
+        assert!(parse_find_line("garbage").is_none());
+    }
+
+    #[test]
+    fn regex_escape_keeps_hosts_literal() {
+        assert_eq!(regex_escape("me@10.0.0.5"), r"me@10\.0\.0\.5");
+        assert_eq!(regex_escape("[fe80::1]"), r"\[fe80::1\]");
     }
 }

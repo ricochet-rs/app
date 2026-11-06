@@ -39,6 +39,6 @@ impl SettingsSection for AuditLogSettings {
 
     fn problem(&self) -> Option<String> {
         (!(self.keep_forever || self.retention_days.is_empty_or_positive()))
-            .then(|| "Enter how long to keep audit records as a whole number of days.".into())
+            .then(|| "Log retention must be a whole number of days.".into())
     }
 }

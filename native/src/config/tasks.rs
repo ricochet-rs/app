@@ -58,15 +58,13 @@ impl SettingsSection for TaskSettings {
             if entered.non_empty().is_some()
                 && !seconds(entered).is_some_and(|s| s > 0 && s <= i64::from(u32::MAX))
             {
-                return Some("Enter time limits as a number of minutes greater than 0.".into());
+                return Some("Timeouts must be whole minutes above 0.".into());
             }
         }
         if let Some(concurrency) = self.restore_concurrency.non_empty()
             && concurrency.parse::<u16>().map_or(true, |n| n == 0)
         {
-            return Some(
-                "Enter how many package installs ricochet runs at once, from 1 to 65535.".into(),
-            );
+            return Some("Concurrent package installs must be between 1 and 65535.".into());
         }
         None
     }

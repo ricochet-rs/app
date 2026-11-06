@@ -53,6 +53,6 @@ impl SettingsSection for ServerSettings {
     fn problem(&self) -> Option<String> {
         self.proxy_port()
             .is_none()
-            .then(|| "Enter a port between 1 and 65535.".to_owned())
+            .then(|| "Port must be between 1 and 65535.".to_owned())
     }
 }
