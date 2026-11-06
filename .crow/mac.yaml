@@ -24,6 +24,8 @@ steps:
     commands:
       - |
         set -euo pipefail
+        # The agent starts steps with a short PATH, so add where Homebrew and the GitHub CLI installer put their tools.
+        export PATH="/opt/homebrew/bin:$HOME/.local/bin:$PATH"
         command -v cargo > /dev/null || { echo "ERROR: cargo is missing on this agent; install Rust with rustup"; exit 1; }
         command -v gh > /dev/null || { echo "ERROR: gh is missing on this agent; install it with brew install gh"; exit 1; }
         # Each step runs sandboxed, so cargo keeps its downloads in the workspace.

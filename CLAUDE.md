@@ -78,7 +78,8 @@ Ricochet installs whichever tarball the app copies, but reinstalls renv only whe
 
 Run git-sv, commitlint, tests and the Linux and Windows builds on the Linux agent, and only the `.dmg` on the Apple Silicon agent, because that agent runs the `local` backend, where `image` names the shell and containers do not exist.
 Set `CARGO_HOME` inside the workspace on the Apple Silicon agent, because it runs each step in a sandbox that can't write the user's own `~/.cargo`.
-Build the AppImage on Debian bullseye, because it links against the oldest glibc it can run on.
+Build the AppImage on Debian bookworm, the oldest Debian that still gets security updates, because the glibc it links against sets the oldest distribution it runs on.
+Start a script in a Debian container with `set -eu`, never `-o pipefail`, because Crow runs it with dash.
 Cross-compile Windows with cargo-xwin and the `windows` Cargo profile, because no Windows agent exists and GPUI precompiles its Windows shaders only when it builds on Windows; that profile keeps GPUI's debug assertions on, which makes it compile them at run time.
 Keep `mac.yaml`, `linux.yaml` and `windows.yaml` depending on `release`, because `gh release upload` needs the release `release.yaml` creates.
 Write Crow metadata in brace form (`${CI_COMMIT_TAG}`) and shell-local variables bare or with `$$`, because Crow expands `${...}` before the shell runs, as ricochet's root `CLAUDE.md` explains.
