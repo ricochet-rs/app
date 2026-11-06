@@ -97,13 +97,13 @@ impl SetupSection {
         match self {
             Self::Authentication | Self::Server => None,
             Self::Users => Some("Manage user roles and access."),
-            Self::Email => Some("Configure the mail server for notifications."),
+            Self::Email => Some("Configure the mail server ricochet uses to send notifications."),
             Self::Packages => Some("Manage default package repository sources and overrides."),
             Self::Deployments => Some("Manage deployment history and bundle size limits."),
             Self::Tasks => Some("Manage task and package install limits."),
             Self::Logging => Some("ricochet writes its logs to `~/.local/share/ricochet/logs`."),
             Self::AuditLog => Some("Manage audit log retention and storage."),
-            Self::Telemetry => Some("Export traces to an OpenTelemetry collector over gRPC."),
+            Self::Telemetry => Some("Send traces to an OpenTelemetry collector over gRPC."),
             Self::DangerZone => Some("Browse ricochet's files, delete its data, or uninstall it."),
         }
     }

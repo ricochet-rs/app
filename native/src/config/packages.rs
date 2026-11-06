@@ -124,7 +124,7 @@ impl SettingsSection for PackageSettings {
             .iter()
             .any(|repository| repository.name.non_empty().is_none())
         {
-            return Some("Name every R repository, such as CRAN.".into());
+            return Some("Every R repository needs a name, like CRAN.".into());
         }
         let names: HashSet<&str> = self
             .r
@@ -132,7 +132,7 @@ impl SettingsSection for PackageSettings {
             .map(|repository| repository.name.trimmed())
             .collect();
         if names.len() != self.r.len() {
-            return Some("R repository names must be unique.".into());
+            return Some("Each R repository needs a unique name.".into());
         }
         let any_bad = self
             .r

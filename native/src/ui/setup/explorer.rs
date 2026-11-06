@@ -296,7 +296,7 @@ impl SetupView {
     pub(super) fn delete_data_row(&self, edge: Hsla, cx: &mut Context<Self>) -> Div {
         let busy = self.server.read(cx).activity.is_some();
         let chosen = &self.delete_choices;
-        let description = "Delete data without uninstalling ricochet.".to_owned();
+        let description = "Clear out data while keeping ricochet installed.".to_owned();
         let (primary, input, on_primary, muted, hover) = (
             cx.theme().primary,
             cx.theme().input,
@@ -406,11 +406,13 @@ impl SetupView {
         let controller = self.server.read(cx);
         let message = if controller.connection.is_remote() {
             format!(
-                "The app stops ricochet, permanently deletes the {list} on {}, and restarts ricochet.",
+                "ricochet will be stopped while the {list} is permanently deleted from {}, then started again.",
                 controller.connection.name()
             )
         } else {
-            format!("The app stops ricochet, moves the {list} to the Trash, and restarts ricochet.")
+            format!(
+                "ricochet will be stopped while the {list} is moved to the Trash, then started again."
+            )
         };
         let title = format!("Delete the {list}?");
         let view = cx.entity();

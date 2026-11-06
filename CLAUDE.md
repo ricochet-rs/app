@@ -80,7 +80,7 @@ Make every release step safe to restart: edit the release when it exists, and up
 
 ## Style
 
-Make a person or ricochet the subject of every sentence in the app, written the way a person would say it: "Leave this empty and ricochet keeps every file", never "Files are kept" or "Debug writes more".
+Write app text in plain, friendly, complete sentences that match the copy already in the app, such as "Enable compression" with "Compress old logs to save disk space.", because clipped label-speak like "The claim that lists each user's groups." reads like a robot.
 Leave a setting out of the app when ricochet ignores it on macOS, as it does `resources.default_memory_limit`.
 Put `.textSelection(.enabled)` on every `Text` outside a button, because SwiftUI text on macOS can't be selected or copied otherwise.
 Build a dropdown from `Menu`, never `.popover`, because macOS centres a popover on its trigger with an arrow instead of dropping it from the field's edge.

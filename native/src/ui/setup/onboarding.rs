@@ -204,24 +204,23 @@ impl SetupView {
         };
         (
             "Welcome to ricochet".into(),
-            "Install ricochet on this machine or a Linux server, or manage an existing install."
-                .into(),
+            "Install ricochet or manage an existing server.".into(),
             v_flex()
                 .gap_5()
                 .child(row(
                     "desktop",
-                    "Your machine or your server",
-                    "Install locally or on any Linux machine you reach over SSH.",
+                    "Your machine or a server",
+                    "Run ricochet locally or on any Linux server you can SSH into.",
                 ))
                 .child(row(
                     "power",
-                    "Runs in the background",
-                    "ricochet starts automatically and keeps running.",
+                    "Always running",
+                    "ricochet runs in the background and starts back up on its own.",
                 ))
                 .child(row(
                     "sliders-horizontal",
-                    "Configure everything here",
-                    "Manage authentication, packages, logs and more from this app.",
+                    "Everything in one place",
+                    "Manage authentication, packages, logging, and users right from this app.",
                 ))
                 .into_any_element(),
         )
@@ -381,7 +380,7 @@ impl SetupView {
                 )
                 .child(field(
                     "Add machine",
-                    Some("Enter an SSH config alias or user@host. Use key-based login.".into()),
+                    Some("Enter a host from your SSH config or user@host. You'll need key-based SSH access.".into()),
                     h_flex()
                         .gap_2()
                         .child(
@@ -494,7 +493,7 @@ impl SetupView {
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
                                 .child(prose(format!(
-                                    "Without this, systemd stops ricochet when you log out of {machine}."
+                                    "Otherwise ricochet stops when you log out of {machine}."
                                 ))),
                         ),
                 )
@@ -509,7 +508,7 @@ impl SetupView {
         });
         (
             "Ready to install".into(),
-            "This app downloads ricochet and starts it in the background.".into(),
+            "We'll download ricochet and get it running in the background.".into(),
             v_flex()
                 .gap_3()
                 .child(summary)
@@ -576,12 +575,12 @@ impl SetupView {
         });
         (
             if alert.is_some() {
-                "Install failed".to_owned()
+                "Something went wrong".to_owned()
             } else {
                 "Installing ricochet".to_owned()
             },
             if alert.is_some() {
-                "Fix the error below and try again.".to_owned()
+                "Check the error below and try again.".to_owned()
             } else {
                 "This usually takes under a minute.".to_owned()
             },
@@ -608,7 +607,7 @@ impl SetupView {
                 .border_color(cx.theme().success)
                 .child(ph("check-circle").size_5().text_color(cx.theme().success))
                 .child(div().text_sm().child(prose(
-                    "ricochet runs in the background and restarts automatically.",
+                    "You're all set. ricochet will keep running in the background.",
                 )))
                 .into_any_element(),
         )
@@ -747,7 +746,7 @@ impl SetupView {
         };
         let problem = self.problem.as_ref().map(|problem| {
             error_alert(
-                "Fix these settings",
+                "A few settings need attention",
                 problem,
                 cx.listener(|this, _, _, cx| {
                     this.problem = None;

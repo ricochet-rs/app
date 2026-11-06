@@ -101,7 +101,9 @@ pub struct SetupView {
     log_tail: logs::LogTail,
     /// Reads the log every two seconds while the Live tab shows, and stops when dropped.
     log_task: Option<gpui::Task<()>>,
-    log_scroll: ScrollHandle,
+    log_list: gpui::ListState,
+    /// Whether the log view shows its newest line, so new lines arrive only while you are not reading older ones.
+    log_following: std::rc::Rc<std::cell::Cell<bool>>,
     /// Log levels the Live tab hides, such as `"DEBUG"`.
     hidden_levels: Vec<&'static str>,
     /// The window's height at the last render, so the log view can fill what is left.
@@ -147,6 +149,7 @@ impl SetupView {
         let saved = server.read(cx).saved.clone();
         let saved_issuer = saved.as_ref().map(|config| config.authentication.issuer());
         let first_run = !server.read(cx).is_configured;
+        let log_following = std::rc::Rc::new(std::cell::Cell::new(true));
         let host_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("my-server or user@host"));
         let mut view = Self {
@@ -162,7 +165,8 @@ impl SetupView {
             logging_tab: LoggingTab::Settings,
             log_tail: logs::LogTail::default(),
             log_task: None,
-            log_scroll: ScrollHandle::default(),
+            log_list: Self::new_log_list(log_following.clone()),
+            log_following,
             hidden_levels: Vec::new(),
             viewport_height: window.viewport_size().height,
             server_menu_open: true,
@@ -499,6 +503,8 @@ impl SetupView {
         self.delete_choices.clear();
         self.stop_following_logs();
         self.log_tail = logs::LogTail::default();
+        self.log_list.reset(0);
+        self.log_following.set(true);
         if self.section == SetupSection::Logging && self.logging_tab == LoggingTab::Live {
             self.follow_logs(cx);
         }
@@ -571,7 +577,7 @@ impl SetupView {
     /// What stops the authentication answers from being saved, counting a managed choice still waiting for **I agree**.
     fn sign_in_problem(&self) -> Option<String> {
         if self.considering_managed && !self.config.authentication.managed {
-            return Some("Select I agree to use managed authentication.".into());
+            return Some("Select I agree to continue with managed authentication.".into());
         }
         self.config.authentication.problem()
     }
@@ -962,7 +968,7 @@ impl SetupView {
 
         let alert = if let Some(problem) = &self.problem {
             Some(error_alert(
-                "Fix these settings",
+                "A few settings need attention",
                 problem,
                 cx.listener(|this, _, _, cx| {
                     this.problem = None;
@@ -1253,8 +1259,8 @@ impl SetupView {
 
         let warning = changes_issuer.then(|| {
             callout(
-                "Existing users won't carry over",
-                "Everyone who signs in through the new provider gets a new account with the default role. Assign roles under Users.",
+                "Existing accounts won't carry over",
+                "Users will get a new account with the default role the first time they sign in with the new provider. You can update their roles under Users.",
                 cx.theme().warning,
                 vec![
                     Button::new("open-users")
@@ -1528,7 +1534,7 @@ impl SetupView {
             self.text_field(
                 "Client secret",
                 "auth.client_secret",
-                Some("ricochet uses it to read groups and photos from Microsoft Entra ID."),
+                Some("Required for Microsoft Entra ID so ricochet can read groups and profile photos."),
                 cx,
             )
         };
@@ -1574,7 +1580,7 @@ impl SetupView {
                 div()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child(prose("Add this URL to your identity provider's app registration.")),
+                    .child(prose("Add this redirect URL to your app in your identity provider.")),
             )
             .child(
                 div()
@@ -1607,19 +1613,19 @@ impl SetupView {
                     .child(self.optional_text_field(
                         "Display name claim",
                         "auth.display_name_claim",
-                        Some("The claim ricochet shows as each user's name."),
+                        Some("The claim used for each user's display name."),
                         cx,
                     ))
                     .child(self.optional_text_field(
                         "Groups claim",
                         "auth.groups_claim",
-                        Some("The claim that lists each user's groups."),
+                        Some("The claim that contains a user's groups. Leave blank to skip group sync."),
                         cx,
                     ))
                     .child(self.optional_text_field(
                         "Group sync interval",
                         "auth.sync_interval",
-                        Some("Minutes between group refreshes. Leave empty to refresh only at sign-in."),
+                        Some("How often to refresh groups, in minutes. Leave blank to only refresh at sign-in."),
                         cx,
                     )),
                 ),
@@ -1633,7 +1639,7 @@ impl SetupView {
         let port_description = if managed {
             "Managed authentication requires port 6188.".to_owned()
         } else {
-            format!("Open ricochet at {local_url}.")
+            format!("ricochet will be available at {local_url}.")
         };
         let install = (!installed).then(|| {
             let server = self.server.clone();
@@ -1661,7 +1667,7 @@ impl SetupView {
                     .child(self.optional_text_field(
                         "License key",
                         "server.license_key",
-                        Some("Leave empty for the Community Edition."),
+                        Some("Leave blank to use the Community Edition."),
                         cx,
                     )),
             )
@@ -1825,13 +1831,13 @@ impl SetupView {
                 .child(self.choice(
                     "default-role",
                     "Default role",
-                    Some("The first person to sign in becomes an admin."),
+                    Some("The role given to new users. The first person to sign in is always an admin."),
                     cx,
                 ))
                 .child(self.toggle(
                     "require-sign-in",
                     "Require sign-in",
-                    Some("Block anonymous visitors from every page."),
+                    Some("Only signed-in users can view content."),
                     users.require_sign_in,
                     cx,
                     |config, on| config.users.require_sign_in = on,
@@ -1839,7 +1845,7 @@ impl SetupView {
                 .child(self.toggle(
                     "avatars",
                     "Allow profile pictures",
-                    Some("Users can upload a profile picture."),
+                    Some("Let users upload their own profile picture."),
                     users.allow_avatar_upload,
                     cx,
                     |config, on| config.users.allow_avatar_upload = on,
@@ -1989,7 +1995,7 @@ impl SetupView {
         let mut pane = card(cx).max_w(px(760.0)).child(self.toggle(
             "email-enabled",
             "Enable email",
-            Some("ricochet emails notices such as failed deployments."),
+            Some("Send email notifications, like when a deployment fails."),
             enabled,
             cx,
             |config, on| config.email.enabled = on,
@@ -2005,7 +2011,7 @@ impl SetupView {
                 .child(self.text_field(
                     "Reply-to",
                     "email.reply_to",
-                    Some("Leave empty to reply to the From address."),
+                    Some("Leave blank to use the From address."),
                     cx,
                 ));
         }
@@ -2134,21 +2140,21 @@ impl SetupView {
                 "Deployment history",
                 "deployments.max_deployments",
                 None,
-                Some("Deployments to keep per item."),
+                Some("How many deployments to keep for each item."),
                 cx,
             ))
             .child(self.number_field(
                 "Deployment retention",
                 "deployments.max_age_days",
                 Some("days"),
-                None,
+                Some("How long to keep old deployments. Leave blank to keep them forever."),
                 cx,
             ))
             .child(self.number_field(
                 "Max bundle size",
                 "deployments.max_bundle_size",
                 None,
-                Some("Such as 100MB or 1GB."),
+                Some("The largest bundle that can be deployed, like 100MB or 1GB."),
                 cx,
             ))
             .into_any_element()
@@ -2157,19 +2163,25 @@ impl SetupView {
     fn tasks_pane(&self, cx: &mut Context<Self>) -> AnyElement {
         card(cx)
             .max_w(px(760.0))
-            .child(self.number_field("Task timeout", "tasks.max_duration", Some("min"), None, cx))
+            .child(self.number_field(
+                "Task timeout",
+                "tasks.max_duration",
+                Some("min"),
+                Some("How long a task can run before it's stopped."),
+                cx,
+            ))
             .child(self.number_field(
                 "Package install timeout",
                 "tasks.restore_timeout",
                 Some("min"),
-                None,
+                Some("How long a package install can run before it's stopped."),
                 cx,
             ))
             .child(self.number_field(
                 "Concurrent package installs",
                 "tasks.restore_concurrency",
                 None,
-                None,
+                Some("How many package installs can run at the same time."),
                 cx,
             ))
             .into_any_element()
@@ -2215,8 +2227,18 @@ impl SetupView {
     fn logging_settings(&self, cx: &mut Context<Self>) -> Div {
         let logging = &self.config.logging;
         card(cx)
-            .child(self.choice("log-level", "Log level", None, cx))
-            .child(self.choice("log-rotation", "Log rotation", None, cx))
+            .child(self.choice(
+                "log-level",
+                "Log level",
+                Some("How much detail ricochet writes to its logs."),
+                cx,
+            ))
+            .child(self.choice(
+                "log-rotation",
+                "Log rotation",
+                Some("How often ricochet starts a new log file."),
+                cx,
+            ))
             .child(self.toggle(
                 "log-compress",
                 "Enable compression",
@@ -2236,7 +2258,7 @@ impl SetupView {
                 "Max log files",
                 "logging.max_files",
                 None,
-                Some("Delete the oldest rotated logs past this count."),
+                Some("How many old log files to keep. Leave blank to keep them all."),
                 cx,
             ))
     }
@@ -2258,7 +2280,7 @@ impl SetupView {
                     "Log retention",
                     "audit.retention_days",
                     Some("days"),
-                    None,
+                    Some("How long to keep audit logs before they're deleted."),
                     cx,
                 ))
             })
@@ -2280,13 +2302,18 @@ impl SetupView {
             .child(self.toggle(
                 "otel-enabled",
                 "Enable tracing",
-                None,
+                Some("Send traces to an OpenTelemetry collector."),
                 telemetry.enabled,
                 cx,
                 |config, on| config.telemetry.enabled = on,
             ))
             .when(telemetry.enabled, |pane| {
-                pane.child(self.text_field("Collector URL", "telemetry.endpoint", None, cx))
+                pane.child(self.text_field(
+                    "Collector URL",
+                    "telemetry.endpoint",
+                    Some("The gRPC endpoint for your collector, like http://localhost:4317."),
+                    cx,
+                ))
             })
             .into_any_element()
     }

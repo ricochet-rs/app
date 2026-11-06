@@ -4,11 +4,15 @@ use super::SetupView;
 use crate::backend::Backend;
 use crate::ui::icons::ph;
 use gpui::prelude::*;
-use gpui::{ClipboardItem, Context, Div, Hsla, div, px};
+use gpui::{
+    AnyElement, App, ClipboardItem, Context, Div, Hsla, ListAlignment, ListState, div, list, px,
+};
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::{ActiveTheme, Sizable, h_flex, v_flex};
 use serde_json::Value;
+use std::cell::Cell;
+use std::rc::Rc;
 use std::time::Duration;
 
 const TAIL_LINES: &str = "500";
@@ -103,6 +107,8 @@ impl LogEntry {
 pub(super) struct LogTail {
     file: Option<String>,
     entries: Vec<LogEntry>,
+    /// The entries the level filters let through, as the list draws them.
+    shown: Rc<Vec<LogEntry>>,
     error: Option<String>,
 }
 
@@ -132,7 +138,127 @@ fn read_tail(backend: &dyn Backend) -> Result<(String, Vec<LogEntry>), String> {
     Ok((newest.name.clone(), parsed))
 }
 
+fn level_color(level: &str, cx: &App) -> Hsla {
+    match level {
+        "ERROR" => cx.theme().danger,
+        "WARN" => cx.theme().warning,
+        "INFO" => cx.theme().ring,
+        _ => cx.theme().muted_foreground,
+    }
+}
+
+/// One row of the log view, built only while it is on screen.
+fn log_row(entry: &LogEntry, index: usize, cx: &App) -> AnyElement {
+    let muted = cx.theme().muted_foreground;
+    let details: Vec<String> = std::iter::once(entry.target.clone())
+        .filter(|target| !target.is_empty())
+        .chain(
+            entry
+                .fields
+                .iter()
+                .map(|(key, value)| format!("{key}={value}")),
+        )
+        .collect();
+    let accent = match entry.level.as_str() {
+        "ERROR" | "WARN" => level_color(&entry.level, cx),
+        _ => gpui::transparent_black(),
+    };
+    let raw = entry.raw.clone();
+    h_flex()
+        .id(("log-row", index))
+        .group("log-row")
+        .gap_3()
+        .pl_3()
+        .pr_2()
+        .py_2()
+        .items_start()
+        .relative()
+        .bg(if index.is_multiple_of(2) {
+            cx.theme().background
+        } else {
+            cx.theme().muted
+        })
+        .border_b_1()
+        .border_color(cx.theme().border)
+        .child(
+            div()
+                .absolute()
+                .left_0()
+                .top_0()
+                .bottom_0()
+                .w(px(3.0))
+                .bg(accent),
+        )
+        .child(
+            div()
+                .w(px(60.0))
+                .flex_shrink_0()
+                .text_color(muted)
+                .child(entry.time.clone()),
+        )
+        .child(
+            div()
+                .w(px(44.0))
+                .flex_shrink_0()
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_color(level_color(&entry.level, cx))
+                .child(entry.level.clone()),
+        )
+        .child(
+            v_flex()
+                .flex_1()
+                .min_w_0()
+                .gap_0p5()
+                .child(
+                    div()
+                        .text_color(cx.theme().foreground)
+                        .child(entry.message.clone()),
+                )
+                .when(!details.is_empty(), |text| {
+                    text.child(div().text_color(muted).child(details.join("  ")))
+                }),
+        )
+        .child(
+            div()
+                .invisible()
+                .group_hover("log-row", |copy| copy.visible())
+                .child(
+                    Button::new(("copy-log", index))
+                        .icon(ph("copy"))
+                        .tooltip("Copy line")
+                        .ghost()
+                        .xsmall()
+                        .on_click(move |_, _, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(raw.clone()))
+                        }),
+                ),
+        )
+        .into_any_element()
+}
+
 impl SetupView {
+    /// A list that draws only the rows on screen and stays pinned to the newest line until you scroll up.
+    pub(super) fn new_log_list(following: Rc<Cell<bool>>) -> ListState {
+        let list = ListState::new(0, ListAlignment::Bottom, px(400.0));
+        list.set_scroll_handler(move |event, _, _| {
+            following.set(event.visible_range.end >= event.count);
+        });
+        list
+    }
+
+    /// Shows the entries the level filters let through, keeping the view where it is.
+    pub(super) fn refresh_log_rows(&mut self) {
+        let shown: Vec<LogEntry> = self
+            .log_tail
+            .entries
+            .iter()
+            .filter(|entry| !self.hidden_levels.contains(&entry.level.as_str()))
+            .cloned()
+            .collect();
+        self.log_list.reset(shown.len());
+        self.log_tail.shown = Rc::new(shown);
+    }
+
     /// Starts reading the log every two seconds, unless that is already running.
     pub(super) fn follow_logs(&mut self, cx: &mut Context<Self>) {
         if self.log_task.is_some() {
@@ -146,24 +272,25 @@ impl SetupView {
                     .background_executor()
                     .spawn(async move { read_tail(reader.as_ref()) })
                     .await;
-                let updated = this.update(cx, |this, cx| {
-                    let offset = this.log_scroll.offset();
-                    let at_bottom = -offset.y >= this.log_scroll.max_offset().height - px(8.0);
-                    match result {
-                        Ok((file, entries)) => {
-                            let changed = this.log_tail.entries != entries;
-                            this.log_tail = LogTail {
-                                file: Some(file),
-                                entries,
-                                error: None,
-                            };
-                            if changed && at_bottom {
-                                this.log_scroll.scroll_to_bottom();
-                            }
+                let updated = this.update(cx, |this, cx| match result {
+                    Ok((file, entries)) => {
+                        let changed = this.log_tail.entries != entries
+                            || this.log_tail.file.as_ref() != Some(&file)
+                            || this.log_tail.error.is_some();
+                        if changed && this.log_following.get() {
+                            this.log_tail.file = Some(file);
+                            this.log_tail.entries = entries;
+                            this.log_tail.error = None;
+                            this.refresh_log_rows();
+                            cx.notify();
                         }
-                        Err(error) => this.log_tail.error = Some(error),
                     }
-                    cx.notify();
+                    Err(error) => {
+                        if this.log_tail.error.as_ref() != Some(&error) {
+                            this.log_tail.error = Some(error);
+                            cx.notify();
+                        }
+                    }
                 });
                 if updated.is_err() {
                     break;
@@ -175,15 +302,6 @@ impl SetupView {
 
     pub(super) fn stop_following_logs(&mut self) {
         self.log_task = None;
-    }
-
-    fn level_color(&self, level: &str, cx: &Context<Self>) -> Hsla {
-        match level {
-            "ERROR" => cx.theme().danger,
-            "WARN" => cx.theme().warning,
-            "INFO" => cx.theme().ring,
-            _ => cx.theme().muted_foreground,
-        }
     }
 
     pub(super) fn live_logs(&self, cx: &mut Context<Self>) -> Div {
@@ -203,7 +321,7 @@ impl SetupView {
             .gap_1()
             .children(LEVELS.iter().enumerate().map(|(index, level)| {
                 let shown = !self.hidden_levels.contains(level);
-                let color = self.level_color(level, cx);
+                let color = level_color(level, cx);
                 let level = *level;
                 div()
                     .id(("log-level", index))
@@ -228,118 +346,25 @@ impl SetupView {
                         } else {
                             this.hidden_levels.push(level);
                         }
+                        this.refresh_log_rows();
                         cx.notify();
                     }))
                     .child(level)
             }));
-        let divider = cx.theme().border;
-        let (stripe_even, stripe_odd) = (cx.theme().background, cx.theme().muted);
-        let visible_lines = tail
-            .entries
-            .iter()
-            .filter(|entry| !self.hidden_levels.contains(&entry.level.as_str()))
-            .map(|entry| entry.raw.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let shown = tail.shown.clone();
+        let copied = shown.clone();
         let copy_all = Button::new("copy-logs")
             .icon(ph("copy"))
             .label("Copy all")
             .ghost()
             .xsmall()
             .on_click(move |_, _, cx| {
-                cx.write_to_clipboard(ClipboardItem::new_string(visible_lines.clone()))
-            });
-        let rows = tail
-            .entries
-            .iter()
-            .filter(|entry| !self.hidden_levels.contains(&entry.level.as_str()))
-            .enumerate()
-            .map(|(index, entry)| {
-                let details: Vec<String> = std::iter::once(entry.target.clone())
-                    .filter(|target| !target.is_empty())
-                    .chain(
-                        entry
-                            .fields
-                            .iter()
-                            .map(|(key, value)| format!("{key}={value}")),
-                    )
-                    .collect();
-                let accent = match entry.level.as_str() {
-                    "ERROR" | "WARN" => self.level_color(&entry.level, cx),
-                    _ => gpui::transparent_black(),
-                };
-                let raw = entry.raw.clone();
-                h_flex()
-                    .id(("log-row", index))
-                    .group("log-row")
-                    .gap_3()
-                    .pl_3()
-                    .pr_2()
-                    .py_2()
-                    .items_start()
-                    .relative()
-                    .bg(if index % 2 == 0 {
-                        stripe_even
-                    } else {
-                        stripe_odd
-                    })
-                    .border_b_1()
-                    .border_color(divider)
-                    .child(
-                        div()
-                            .absolute()
-                            .left_0()
-                            .top_0()
-                            .bottom_0()
-                            .w(px(3.0))
-                            .bg(accent),
-                    )
-                    .child(
-                        div()
-                            .w(px(60.0))
-                            .flex_shrink_0()
-                            .text_color(muted)
-                            .child(entry.time.clone()),
-                    )
-                    .child(
-                        div()
-                            .w(px(44.0))
-                            .flex_shrink_0()
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .text_color(self.level_color(&entry.level, cx))
-                            .child(entry.level.clone()),
-                    )
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .gap_0p5()
-                            .child(
-                                div()
-                                    .text_color(cx.theme().foreground)
-                                    .child(entry.message.clone()),
-                            )
-                            .when(!details.is_empty(), |text| {
-                                text.child(div().text_color(muted).child(details.join("  ")))
-                            }),
-                    )
-                    .child(
-                        div()
-                            .invisible()
-                            .group_hover("log-row", |copy| copy.visible())
-                            .child(
-                                Button::new(("copy-log", index))
-                                    .icon(ph("copy"))
-                                    .tooltip("Copy line")
-                                    .ghost()
-                                    .xsmall()
-                                    .on_click(move |_, _, cx| {
-                                        cx.write_to_clipboard(ClipboardItem::new_string(
-                                            raw.clone(),
-                                        ))
-                                    }),
-                            ),
-                    )
+                let text = copied
+                    .iter()
+                    .map(|entry| entry.raw.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                cx.write_to_clipboard(ClipboardItem::new_string(text))
             });
         let height = (self.viewport_height - px(CHROME_HEIGHT)).max(px(MIN_LOG_HEIGHT));
         v_flex()
@@ -361,22 +386,22 @@ impl SetupView {
             )
             .child(
                 div()
+                    .id("log-view")
                     .relative()
+                    .h(height)
                     .border_1()
                     .border_color(cx.theme().border)
                     .bg(cx.theme().muted)
+                    .text_xs()
+                    .font_family(mono)
+                    .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
                     .child(
-                        v_flex()
-                            .id("log-lines")
-                            .h(height)
-                            .overflow_y_scroll()
-                            .track_scroll(&self.log_scroll)
-                            .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
-                            .text_xs()
-                            .font_family(mono)
-                            .children(rows),
+                        list(self.log_list.clone(), move |index, _, cx| {
+                            log_row(&shown[index], index, cx)
+                        })
+                        .size_full(),
                     )
-                    .vertical_scrollbar(&self.log_scroll),
+                    .vertical_scrollbar(&self.log_list),
             )
     }
 }
