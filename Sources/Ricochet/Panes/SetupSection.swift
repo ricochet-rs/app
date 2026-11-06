@@ -30,10 +30,9 @@ enum SetupSection: CaseIterable, Identifiable {
     }
   }
 
-  var summary: String {
+  var summary: String? {
     switch self {
-    case .authentication:
-      "Choose how people sign in. Ricochet makes the first person to sign in an admin."
+    case .authentication: nil
     case .server: "Ricochet runs on this Mac whenever you're logged in."
     case .users: "Change each person's role, and choose the role new people get."
     case .email:

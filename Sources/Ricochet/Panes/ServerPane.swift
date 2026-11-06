@@ -15,7 +15,7 @@ struct ServerPane: View {
       InputField(
         "Port", text: $settings.port,
         description: portLocked
-          ? "Configure your own identity provider to change the port."
+          ? "Switch to your own IdP in Authentication to change the port."
           : "On this Mac, ricochet answers at \(localURL)."
       )
       .disabled(portLocked)

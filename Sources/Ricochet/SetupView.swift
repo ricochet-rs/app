@@ -82,10 +82,12 @@ struct SetupView: View {
             Text(section.title)
               .font(.system(size: 20, weight: .semibold))
               .foregroundStyle(Theme.foreground)
-            Text(section.summary)
-              .font(.system(size: 14))
-              .foregroundStyle(Theme.mutedForeground)
-              .fixedSize(horizontal: false, vertical: true)
+            if let summary = section.summary {
+              Text(summary)
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.mutedForeground)
+                .fixedSize(horizontal: false, vertical: true)
+            }
           }
           .textSelection(.enabled)
           pane

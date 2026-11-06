@@ -9,8 +9,10 @@ You need an Apple Silicon Mac with macOS 15 or later, and R, Julia, or Python.
 1. Download `ricochet-<version>.dmg` from the [latest release](https://github.com/ricochet-rs/macos/releases/latest).
 2. Drag **Ricochet** into **Applications** and open it.
 3. If macOS blocks it, open **System Settings** > **Privacy & Security** and select **Open Anyway**.
-4. Select **Install and start**, then sign in with a ricochet account.
+4. Select **I agree** on **Managed auth** to sign in with a ricochet account, or **Configure** on **Your own IdP**.
+5. Select **Install and start**, then sign in.
 
+With managed auth, you sign in at `http://localhost:6188` only, and you share your name and email address with ricochet under its [privacy policy](https://ricochet.rs/legal/privacy/).
 The first person to sign in becomes the admin.
 
 ![The Ricochet menu in the macOS menu bar](docs/screenshots/menu.png)
@@ -18,7 +20,7 @@ The first person to sign in becomes the admin.
 ## Use your own identity provider
 
 1. Register an app with your identity provider.
-2. Open **Edit configuration** > **Authentication** and select **Configure your own identity provider**.
+2. Open **Edit configuration** > **Authentication** and select **Configure** on **Your own IdP**.
 3. Choose **OpenID Connect** or **Microsoft Entra ID** and enter the **Issuer URL**, **Client ID**, and **Client secret**.
 4. Copy the **Redirect URL** into the app you registered, then select **Save and restart**.
 5. After signing in, change your role in **Users** > **People**.

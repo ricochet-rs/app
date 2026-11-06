@@ -22,7 +22,8 @@ enum Provider: String, CaseIterable, Hashable {
 
 /// `[auth.oidc]`: ricochet managed auth, or your own identity provider and the claims ricochet reads from it.
 struct AuthenticationSettings: Equatable {
-  var managed = true
+  /// Whether you selected **I agree** on managed auth, which shares your name and email address with ricochet.
+  var managed = false
   var provider = Provider.oidc
   var issuerURL = ""
   var clientID = ""
@@ -36,6 +37,8 @@ struct AuthenticationSettings: Equatable {
     managed: false, issuerURL: "https://idp.ricochet.rs", clientID: "398284990531538194")
   /// The only port the managed Zitadel app accepts in its redirect URL.
   static let managedPort = "6188"
+  /// The policy you agree to when you sign in through managed auth.
+  static let privacyPolicy = URL(string: "https://ricochet.rs/legal/privacy/")!
 
   /// The issuer ricochet signs people in with.
   var issuer: String { managed ? Self.managedProvider.issuerURL : issuerURL.trimmed }
@@ -54,7 +57,7 @@ extension AuthenticationSettings: SettingsSection {
       displayNameClaim: oidc["display_name_claim"]?.string ?? "",
       groupsClaim: oidc["groups_claim"]?.string ?? "",
       syncInterval: oidc["sync_interval"]?.int.map(String.init) ?? "")
-    if saved != Self.managedProvider { self = saved }
+    if saved == Self.managedProvider { managed = true } else { self = saved }
   }
 
   func apply(to table: TOMLTable) {
@@ -73,6 +76,9 @@ extension AuthenticationSettings: SettingsSection {
 
   var problem: String? {
     if managed { return nil }
+    if issuerURL.nonEmpty == nil, clientID.nonEmpty == nil {
+      return "Select I agree on Managed auth, or configure your own IdP."
+    }
     if !issuerURL.isHTTPURL { return "Enter the issuer URL, starting with https://." }
     if clientID.nonEmpty == nil { return "Enter the client ID." }
     if provider == .entra, clientSecret.nonEmpty == nil {

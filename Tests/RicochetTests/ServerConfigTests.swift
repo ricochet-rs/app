@@ -72,8 +72,9 @@ private func save(_ config: ServerConfig, over existing: String) throws -> TOMLT
   #expect(ServerConfig(table: saved) == config)
 }
 
-@Test func defaultsWriteOnlyManagedAuthAndTheRequiredKeys() throws {
-  let saved = try save(ServerConfig(), over: "[otel]\nendpoint = \"http://localhost:4317\"\n")
+@Test func managedAuthWritesOnlyTheRequiredKeys() throws {
+  let config = ServerConfig(authentication: AuthenticationSettings(managed: true))
+  let saved = try save(config, over: "[otel]\nendpoint = \"http://localhost:4317\"\n")
 
   #expect(Set(saved.keys) == ["home", "url", "auth", "logs", "network"])
   #expect(Set(saved["auth"]?.table?.keys ?? []) == ["default_role", "oidc"])
@@ -82,7 +83,8 @@ private func save(_ config: ServerConfig, over existing: String) throws -> TOMLT
   #expect(oidc?["issuer_url"]?.string == "https://idp.ricochet.rs")
   #expect(oidc?["client_id"]?.string == "398284990531538194")
   #expect(Set(saved["logs"]?.table?.keys ?? []) == ["file_logging"])
-  #expect(ServerConfig(table: saved) == ServerConfig())
+  #expect(ServerConfig(table: saved) == config)
+  #expect(!ServerConfig(table: TOMLTable()).authentication.managed)
 }
 
 @Test func savedInternalPortsAreKept() throws {
@@ -94,7 +96,7 @@ private func save(_ config: ServerConfig, over existing: String) throws -> TOMLT
 
 @Test func switchingToManagedAuthRemovesYourProvidersKeys() throws {
   let saved = try save(
-    ServerConfig(),
+    ServerConfig(authentication: AuthenticationSettings(managed: true)),
     over: """
       [auth.oidc]
       issuer_url = "https://auth.example.com"

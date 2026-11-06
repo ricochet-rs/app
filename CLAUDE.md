@@ -44,6 +44,7 @@ toml++ keeps a table's keys in name order, so the R repositories reach ricochet 
 
 ## Authentication
 
+Save managed auth only after the person selects **I agree**, because you share your name and email address with ricochet when you sign in through it.
 Hold the port at 6188 under managed auth, because Zitadel accepts only `http://localhost:6188/oauth/callback` as the redirect for the Web app in `AuthenticationSettings.managedProvider`.
 Warn whenever the form changes the issuer, because ricochet keys each user by the bare OIDC `sub` and gives everyone who signs in through a new identity provider a new account with the default role.
 Read and change people with `ricochet-server user --config <file>`, which the app can run beside the server because ricochet writes SQLite directly, and expect `list` to print `No users found.` instead of JSON when nobody has signed in.
