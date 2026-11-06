@@ -16,13 +16,25 @@ impl CommandResult {
     }
 }
 
+/// A command that, on Windows, opens no console window, because every console program the app runs would otherwise flash one.
+pub fn new(executable: impl AsRef<OsStr>) -> Command {
+    #[allow(unused_mut)]
+    let mut command = Command::new(executable);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    command
+}
+
 /// Runs an executable to completion. `environment` adds to, and overrides, the app's own environment.
 pub fn run<S: AsRef<OsStr>>(
     executable: impl AsRef<OsStr>,
     arguments: &[S],
     environment: &[(&str, &str)],
 ) -> io::Result<CommandResult> {
-    let output = Command::new(executable)
+    let output = new(executable)
         .args(arguments)
         .envs(environment.iter().copied())
         .output()?;

@@ -15,7 +15,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 
-const TAIL_LINES: &str = "500";
+const TAIL_LINES: usize = 500;
 /// The window height the rest of the pane takes, so the log fills what is left.
 const CHROME_HEIGHT: f32 = 320.0;
 const MIN_LOG_HEIGHT: f32 = 240.0;
@@ -122,15 +122,10 @@ fn read_tail(backend: &dyn Backend) -> Result<(String, Vec<LogEntry>), String> {
         .max_by_key(|entry| entry.modified.unwrap_or(0))
         .ok_or_else(|| "ricochet hasn't written a log file yet.".to_owned())?;
     let path = logs.join(&newest.name);
-    let result = backend
-        .shell()
-        .run("tail", &["-n", TAIL_LINES, &path.to_string_lossy()])
+    let text = backend
+        .tail(&path, TAIL_LINES)
         .map_err(|error| error.to_string())?;
-    if !result.success {
-        return Err(result.output());
-    }
-    let parsed = result
-        .stdout
+    let parsed = text
         .lines()
         .filter(|line| !line.trim().is_empty())
         .map(LogEntry::parse)

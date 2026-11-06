@@ -24,7 +24,31 @@ pub struct Paths {
 impl Paths {
     pub fn new() -> Self {
         let user_home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+        if cfg!(windows) {
+            let local = dirs::data_local_dir().unwrap_or_else(|| user_home.join("AppData/Local"));
+            return Self::windows(user_home, &local);
+        }
         Self::under(user_home)
+    }
+
+    /// The paths on Windows, under `%LOCALAPPDATA%`, where per-user programs and their data live.
+    pub fn windows(user_home: PathBuf, local: &std::path::Path) -> Self {
+        let home = local.join("ricochet");
+        let app_support = local.join("ricochet-app");
+        Self {
+            binary: local.join("Programs/ricochet/ricochet-server.exe"),
+            config: home.join("ricochet-config.toml"),
+            logs: home.join("logs"),
+            stdout: home.join("ricochet.stdout"),
+            stderr: home.join("ricochet.err"),
+            renv: home.join("vendor/r/renv.tar.gz"),
+            sandbox_home: home.join("home"),
+            app_log: app_support.join("ricochet-app.log"),
+            launcher: app_support.join("ricochet-launcher.exe"),
+            app_support,
+            home,
+            user_home,
+        }
     }
 
     pub fn under(user_home: PathBuf) -> Self {

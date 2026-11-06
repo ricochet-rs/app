@@ -1,4 +1,4 @@
-//! The background job that keeps ricochet-server running: launchd on macOS, systemd on Linux.
+//! The background job that keeps ricochet-server running: launchd on macOS, systemd on Linux, a sign-in `Run` entry on Windows.
 
 use crate::error::Result;
 
@@ -6,6 +6,8 @@ use crate::error::Result;
 mod launchd;
 
 mod systemd;
+#[cfg(windows)]
+mod windows;
 
 /// A job in your login session, which the system starts at login and restarts when it exits.
 pub trait Service: Send + Sync {
@@ -41,15 +43,20 @@ pub fn systemd_unit(
     Box::new(systemd::UserUnit::new(paths, shell))
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(windows)]
+pub fn server(paths: std::sync::Arc<crate::paths::Paths>) -> Box<dyn Service> {
+    Box::new(windows::RunEntry::new(paths))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 pub fn server(_paths: std::sync::Arc<crate::paths::Paths>) -> Box<dyn Service> {
     Box::new(Unsupported)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 struct Unsupported;
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 impl Service for Unsupported {
     fn write_job(&self) -> Result<bool> {
         Err(crate::error::AppError::UnsupportedPlatform)

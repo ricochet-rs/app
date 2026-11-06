@@ -18,14 +18,21 @@ impl Release {
             ("macos", "aarch64" | "arm64") => Some("aarch64-macos"),
             ("linux", "x86_64") => Some("x86_64"),
             ("linux", "aarch64" | "arm64") => Some("aarch64"),
+            ("windows", "x86_64") => Some("x86_64-windows"),
             _ => None,
         }
     }
 
+    /// The archive for `target`: a `.zip` for Windows, a `.tar.gz` everywhere else.
     pub fn archive_url(&self, target: &str) -> String {
         let version = &self.version;
+        let extension = if target.ends_with("windows") {
+            "zip"
+        } else {
+            "tar.gz"
+        };
         format!(
-            "https://s3.eu-central-003.backblazeb2.com/ricochet-server/{version}/ricochet-{version}-{target}.tar.gz"
+            "https://s3.eu-central-003.backblazeb2.com/ricochet-server/{version}/ricochet-{version}-{target}.{extension}"
         )
     }
 
@@ -71,8 +78,13 @@ impl Release {
     pub fn install(&self, paths: &Paths) -> Result<()> {
         let target = Self::target_for(std::env::consts::OS, std::env::consts::ARCH)
             .ok_or(AppError::UnsupportedPlatform)?;
+        let member = if target.ends_with("windows") {
+            "ricochet-server.exe"
+        } else {
+            "ricochet-server"
+        };
         archive::install_executable(
-            "ricochet-server",
+            member,
             &self.archive_url(target),
             &paths.binary,
             &format!("ricochet-server {}", self.version),
@@ -119,6 +131,25 @@ mod tests {
             Some("aarch64-macos")
         );
         assert_eq!(Release::target_for("macos", "x86_64"), None);
+        assert_eq!(
+            Release::target_for("windows", "x86_64"),
+            Some("x86_64-windows")
+        );
+    }
+
+    #[test]
+    fn windows_downloads_a_zip() {
+        let release = Release::from_tag("v0.25.0");
+        assert!(
+            release
+                .archive_url("x86_64-windows")
+                .ends_with("ricochet-0.25.0-x86_64-windows.zip")
+        );
+        assert!(
+            release
+                .archive_url("x86_64")
+                .ends_with("ricochet-0.25.0-x86_64.tar.gz")
+        );
     }
 
     #[test]

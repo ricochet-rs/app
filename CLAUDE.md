@@ -33,6 +33,9 @@ Turn on `logs.file_logging`, because launchd appends stdout to its file forever 
 Probe the proxy port only when the person changed it, before stopping the server, and with `SO_REUSEADDR`, because ricochet's own just-closed connections make its port look taken right after it stops.
 Keep the ports already saved in `[network]` instead of probing again, so a save never moves ricochet's internal ports.
 Give the SSH tunnel its own connection with `ControlPath=none`, because a shared control master takes over the forward, lets `ssh` exit, and keeps the port after the app quits.
+Start the server on Windows through a `Run` entry under `HKCU` and `ricochet-launcher.exe`, because that needs no admin rights, and the launcher hides the console window and restarts the server after a crash.
+Spawn every process through `command::new`, because Windows flashes a console window for each console program the app runs.
+Leave SSH connection sharing off on Windows, because its OpenSSH has no `ControlMaster`.
 
 ## Configuration
 
@@ -61,7 +64,7 @@ Set `HOME` inside ricochet's folder, and point `JULIAUP_DEPOT_PATH` and `UV_PYTH
 
 ## Uninstall
 
-Move what uninstall removes to the Trash on macOS, and delete it on a Linux server, which has no Trash; the confirmation says ricochet and all of its folders will be deleted.
+Move what uninstall removes to the Trash on macOS and the Recycle Bin on Windows, and delete it on a Linux server, which has no Trash; the confirmation says ricochet and all of its folders will be deleted.
 Keep the app itself on uninstall; it returns to the setup state so you can install ricochet again.
 Leave juliaup's Julia installs and uv's Pythons alone, because the person installed those, not the app.
 

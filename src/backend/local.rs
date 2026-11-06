@@ -46,6 +46,8 @@ impl LocalBackend {
         let mut files = vec![("renv.tar.gz", self.paths.renv.clone())];
         if cfg!(target_os = "macos") {
             files.push(("ricochet-launcher", self.paths.launcher.clone()));
+        } else if cfg!(windows) {
+            files.push(("ricochet-launcher.exe", self.paths.launcher.clone()));
         }
         for (name, installed) in files {
             let Some(bundled) = Self::bundled(name) else {
@@ -141,6 +143,25 @@ impl Backend for LocalBackend {
         }
         sort_entries(&mut entries);
         Ok(entries)
+    }
+
+    /// Reads only the end of the file, because Windows has no `tail` and a day's log can be large.
+    fn tail(&self, path: &Path, lines: usize) -> Result<String> {
+        use std::io::{Read, Seek, SeekFrom};
+        const WINDOW: u64 = 1024 * 1024;
+        let mut file = std::fs::File::open(path)?;
+        let length = file.metadata()?.len();
+        let start = length.saturating_sub(WINDOW);
+        file.seek(SeekFrom::Start(start))?;
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)?;
+        let text = String::from_utf8_lossy(&bytes);
+        let mut all: Vec<&str> = text.lines().collect();
+        if start > 0 && !all.is_empty() {
+            all.remove(0);
+        }
+        let first = all.len().saturating_sub(lines);
+        Ok(all[first..].join("\n"))
     }
 
     /// Moves `paths` to the Trash, so a mistake can still be undone.

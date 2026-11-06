@@ -89,6 +89,19 @@ pub trait Backend: Send + Sync {
     fn list_dir(&self, path: &Path) -> Result<Vec<DirEntry>>;
     /// Removes `paths` on that computer, skipping any that don't exist.
     fn remove_data(&self, paths: &[PathBuf]) -> Result<()>;
+
+    /// The last `lines` lines of the text file at `path` on that computer.
+    fn tail(&self, path: &Path, lines: usize) -> Result<String> {
+        let count = lines.to_string();
+        let result = self
+            .shell()
+            .run("tail", &["-n", &count, &path.to_string_lossy()])?;
+        if result.success {
+            Ok(result.stdout)
+        } else {
+            Err(AppError::UserCommand(result.output()))
+        }
+    }
     /// Opens ricochet in a browser on this computer.
     fn open_dashboard(&self, port: u16) -> Result<()>;
     /// Keeps ricochet running after you log out of that computer.

@@ -85,18 +85,19 @@ appimage version="0.0.0":
         --output appimage
     mv ricochet-*-x86_64.AppImage "dist/ricochet-{{ version }}-x86_64.AppImage"
 
-# Package dist/ricochet-<version>-windows-x86_64.zip, cross-compiled with cargo-xwin
+# Package dist/ricochet-<version>-windows-x86_64.zip with the service launcher and renv, cross-compiled with cargo-xwin
 windows version="0.0.0": renv
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo xwin build --profile windows --target x86_64-pc-windows-msvc --bin ricochet-app
+    cargo xwin build --profile windows --target x86_64-pc-windows-msvc --bins
     stage=$(mktemp -d)
     trap 'rm -rf "$stage"' EXIT
     cp target/x86_64-pc-windows-msvc/windows/ricochet-app.exe "$stage/ricochet.exe"
+    cp target/x86_64-pc-windows-msvc/windows/ricochet-launcher.exe "$stage/ricochet-launcher.exe"
     cp "dist/renv-{{ renv_version }}.tar.gz" "$stage/renv.tar.gz"
     out="$PWD/dist/ricochet-{{ version }}-windows-x86_64.zip"
     rm -f "$out"
-    (cd "$stage" && zip -q "$out" ricochet.exe renv.tar.gz)
+    (cd "$stage" && zip -q "$out" ricochet.exe ricochet-launcher.exe renv.tar.gz)
 
 # Render the app icons in Support/ from Support/logo.svg (needs rsvg-convert and iconutil)
 icons:

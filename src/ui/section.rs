@@ -84,7 +84,7 @@ impl SetupSection {
         if self == Self::Server {
             return Some(match remote_host {
                 Some(host) => format!("Ricochet runs on {host} as a systemd service."),
-                None if cfg!(target_os = "macos") => {
+                None if cfg!(any(target_os = "macos", windows)) => {
                     "Ricochet runs on this machine whenever you're logged in.".to_owned()
                 }
                 None => "Ricochet runs on this machine as a systemd service.".to_owned(),

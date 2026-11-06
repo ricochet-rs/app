@@ -8,7 +8,7 @@ use crate::service::{self, Service};
 use crate::shell::Shell;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -104,23 +104,29 @@ impl SshShell {
     }
 
     fn options(&self) -> Vec<String> {
-        vec![
+        let mut options: Vec<String> = vec![
             "-o".into(),
             "BatchMode=yes".into(),
             "-o".into(),
             "ConnectTimeout=10".into(),
-            "-o".into(),
-            "ControlMaster=auto".into(),
-            "-o".into(),
-            "ControlPersist=120".into(),
-            "-o".into(),
-            format!("ControlPath={}/ssh-%C", self.control_dir.display()),
-        ]
+        ];
+        // Windows' OpenSSH has no connection sharing, so every command there opens its own connection.
+        if cfg!(not(windows)) {
+            options.extend([
+                "-o".into(),
+                "ControlMaster=auto".into(),
+                "-o".into(),
+                "ControlPersist=120".into(),
+                "-o".into(),
+                format!("ControlPath={}/ssh-%C", self.control_dir.display()),
+            ]);
+        }
+        options
     }
 
     /// Runs `script` in the remote shell, feeding it `input`.
     fn script(&self, script: &str, input: Option<&[u8]>) -> io::Result<CommandResult> {
-        let mut child = Command::new("ssh")
+        let mut child = crate::command::new("ssh")
             .args(self.options())
             .arg(&self.host)
             .arg(script)
@@ -257,7 +263,7 @@ impl SshBackend {
         *tunnel = None;
         let forward = format!("{port}:localhost:{port}");
         // A shared master would take over the forward and let this ssh exit, so release any it holds.
-        let _ = Command::new("ssh")
+        let _ = crate::command::new("ssh")
             .args(self.shell.options())
             .args(["-O", "cancel", "-L", &forward])
             .arg(&self.host)
@@ -270,7 +276,7 @@ impl SshBackend {
             regex_escape(&forward),
             regex_escape(&self.host)
         );
-        let _ = Command::new("pkill")
+        let _ = crate::command::new("pkill")
             .args(["-f", &leftover])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -286,7 +292,7 @@ impl SshBackend {
             return Err(port_taken());
         }
         // ssh keeps the first value it reads for an option, so these override the shared master in `options`.
-        let mut child = Command::new("ssh")
+        let mut child = crate::command::new("ssh")
             .args(["-o", "ControlMaster=no", "-o", "ControlPath=none"])
             .args(self.shell.options())
             .args(["-T", "-o", "ExitOnForwardFailure=yes", "-L", &forward])
