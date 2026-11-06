@@ -2265,7 +2265,27 @@ impl SetupView {
 
     fn audit_pane(&self, cx: &mut Context<Self>) -> AnyElement {
         let audit = &self.config.audit_log;
-        card(cx)
+        let community = self.config.server.license_key.non_empty().is_none();
+        let notice = community.then(|| {
+            callout(
+                "Audit logging requires a license",
+                "Audit logging is disabled in the Community Edition. Add your license key under Server to turn it on.",
+                cx.theme().ring,
+                vec![
+                    Button::new("open-server")
+                        .label("Open Server")
+                        .outline()
+                        .small()
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.select(SetupSection::Server, cx)
+                        }))
+                        .into_any_element(),
+                ],
+                cx,
+            )
+            .max_w(px(760.0))
+        });
+        let settings = card(cx)
             .max_w(px(760.0))
             .child(self.toggle(
                 "audit-forever",
@@ -2291,7 +2311,11 @@ impl SetupView {
                 audit.write_file,
                 cx,
                 |config, on| config.audit_log.write_file = on,
-            ))
+            ));
+        v_flex()
+            .gap_4()
+            .children(notice)
+            .child(settings)
             .into_any_element()
     }
 

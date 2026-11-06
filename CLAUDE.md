@@ -15,13 +15,14 @@ If authentication, synchronization, HEAD validation, or a required read fails, s
 
 ## Scope
 
-The app runs ricochet for one person, on this machine or on a Linux server it reaches over SSH, and builds for Apple Silicon macOS, x86_64 Linux and x86_64 Windows.
+The app is a simple way to install ricochet's Community Edition for local development, and to install and configure ricochet on remote Linux hosts over SSH.
+It builds for Apple Silicon macOS, x86_64 Linux and x86_64 Windows.
 Never write a `[backend]` section, because content runs as processes on the machine and Kubernetes and containers are out of scope.
 Offer OpenID Connect and Entra only: ricochet refuses a SAML assertion consumer URL that is not `https`, and the server here serves `http://localhost`.
 
 ## App
 
-Keep the app a regular app, never `LSUIElement` in `Support/Info.plist`, because a menu-bar-only app has no Dock icon or ⌘-Tab entry, so its window falls behind other apps with nothing to bring it back.
+Keep `LSUIElement` out of `Support/Info.plist`, because without a Dock icon or ⌘-Tab entry the window falls behind other apps with nothing to bring it back.
 Compile the systemd code on every platform, because the SSH backend drives a Linux server's systemd from macOS and Windows too.
 
 ## Server process
