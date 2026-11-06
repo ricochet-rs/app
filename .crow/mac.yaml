@@ -1,4 +1,4 @@
-# Builds Ricochet.app for Apple Silicon from a pushed tag, turns it into a .dmg, and attaches it to the release from release.yaml.
+# Builds ricochet.app for Apple Silicon from a pushed tag, turns it into a .dmg, and attaches it to the release from release.yaml.
 # The Apple Silicon agent runs the `local` backend, so `image` names the shell and there are no containers.
 clone:
   git:

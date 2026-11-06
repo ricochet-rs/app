@@ -36,16 +36,16 @@ renv:
     fi
     curl -fsSL -o "$out" "$url"
 
-# Assemble dist/Ricochet.app for Apple Silicon, with renv and the service launcher inside
+# Assemble dist/ricochet.app for Apple Silicon, with renv and the service launcher inside
 app version="0.0.0": renv
     #!/usr/bin/env bash
     set -euo pipefail
     cargo build --release --target aarch64-apple-darwin --bins
     bin=target/aarch64-apple-darwin/release
-    app=dist/Ricochet.app
+    app=dist/ricochet.app
     rm -rf "$app"
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
-    cp "$bin/ricochet-app" "$app/Contents/MacOS/Ricochet"
+    cp "$bin/ricochet-app" "$app/Contents/MacOS/ricochet"
     cp "$bin/ricochet-launcher" "$app/Contents/Helpers/ricochet-launcher"
     sed "s/__VERSION__/{{ version }}/g" Support/Info.plist > "$app/Contents/Info.plist"
     cp Support/AppIcon.icns "$app/Contents/Resources/"
@@ -60,7 +60,7 @@ dmg version="0.0.0": (app version)
     set -euo pipefail
     stage=$(mktemp -d)
     trap 'rm -rf "$stage"' EXIT
-    cp -R dist/Ricochet.app "$stage/"
+    cp -R dist/ricochet.app "$stage/"
     ln -s /Applications "$stage/Applications"
     hdiutil create -volname ricochet -srcfolder "$stage" -ov -format UDZO "dist/ricochet-{{ version }}.dmg"
 
@@ -69,10 +69,10 @@ appimage version="0.0.0":
     #!/usr/bin/env bash
     set -euo pipefail
     cargo build --release --bin ricochet-app
-    appdir=dist/Ricochet.AppDir
+    appdir=dist/ricochet.AppDir
     rm -rf "$appdir"
     mkdir -p dist
-    printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Ricochet' 'Exec=ricochet-app' 'Icon=ricochet' 'Categories=Development;' > dist/ricochet.desktop
+    printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=ricochet' 'Exec=ricochet-app' 'Icon=ricochet' 'Categories=Development;' > dist/ricochet.desktop
     cp Support/AppIcon.png dist/ricochet.png
     tool=dist/linuxdeploy-x86_64.AppImage
     [ -x "$tool" ] || { curl -fsSL -o "$tool" https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage; chmod +x "$tool"; }
@@ -83,7 +83,7 @@ appimage version="0.0.0":
         --desktop-file dist/ricochet.desktop \
         --icon-file dist/ricochet.png \
         --output appimage
-    mv Ricochet-*-x86_64.AppImage "dist/ricochet-{{ version }}-x86_64.AppImage"
+    mv ricochet-*-x86_64.AppImage "dist/ricochet-{{ version }}-x86_64.AppImage"
 
 # Package dist/ricochet-<version>-windows-x86_64.zip, cross-compiled with cargo-xwin
 windows version="0.0.0": renv
@@ -92,11 +92,11 @@ windows version="0.0.0": renv
     cargo xwin build --release --target x86_64-pc-windows-msvc --bin ricochet-app
     stage=$(mktemp -d)
     trap 'rm -rf "$stage"' EXIT
-    cp target/x86_64-pc-windows-msvc/release/ricochet-app.exe "$stage/Ricochet.exe"
+    cp target/x86_64-pc-windows-msvc/release/ricochet-app.exe "$stage/ricochet.exe"
     cp "dist/renv-{{ renv_version }}.tar.gz" "$stage/renv.tar.gz"
     out="$PWD/dist/ricochet-{{ version }}-windows-x86_64.zip"
     rm -f "$out"
-    (cd "$stage" && zip -q "$out" Ricochet.exe renv.tar.gz)
+    (cd "$stage" && zip -q "$out" ricochet.exe renv.tar.gz)
 
 # Render the app icons in Support/ from Support/logo.svg (needs rsvg-convert and iconutil)
 icons:
