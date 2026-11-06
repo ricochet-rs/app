@@ -12,7 +12,8 @@ futures = "0.3.34"
 gpui = { version = "0.2.2", features = ["runtime_shaders"] }
 gpui-component = "0.5.1"
 gpui-component-assets = "0.5.1"
-libc = "0.2.191"
+# GPUI's HTTP client pulls in xattr 0.2.3, which reads libc::ENOATTR on Linux, and libc 0.2.190 removed it.
+libc = ">=0.2.182, <0.2.190"
 open = "5.4.5"
 rust-embed = "8"
 serde = { version = "1.0.229", features = ["derive"] }
