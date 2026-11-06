@@ -83,7 +83,7 @@ Start a script in a Debian container with `set -eu`, never `-o pipefail`, becaus
 Cross-compile Windows with cargo-xwin and the `windows` Cargo profile, because no Windows agent exists and GPUI precompiles its Windows shaders only when it builds on Windows; that profile keeps GPUI's debug assertions on, which makes it compile them at run time.
 Keep `mac.yaml`, `linux.yaml` and `windows.yaml` depending on `release`, because `gh release upload` needs the release `release.yaml` creates.
 Write Crow metadata in brace form (`${CI_COMMIT_TAG}`) and shell-local variables bare or with `$$`, because Crow expands `${...}` before the shell runs, as ricochet's root `CLAUDE.md` explains.
-Make every release step safe to restart: edit the release when it exists, and upload every artifact with `--clobber`.
+Make every release step safe to restart: edit the release when it exists, and replace an artifact a previous run uploaded, with `gh release upload --clobber` on the Linux agent and through the GitHub API on the Apple Silicon agent, which has no `gh`.
 `.gitsv/config.yaml` and `.commitlintrc.json` are copies of ricochet's; change them in both repositories together.
 
 ## Style
