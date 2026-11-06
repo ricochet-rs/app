@@ -410,8 +410,13 @@ impl SetupView {
                 controller.connection.name()
             )
         } else {
+            let bin = if cfg!(windows) {
+                "Recycle Bin"
+            } else {
+                "Trash"
+            };
             format!(
-                "ricochet will be stopped while the {list} is moved to the Trash, then started again."
+                "ricochet will be stopped while the {list} is moved to the {bin}, then started again."
             )
         };
         let title = format!("Delete the {list}?");
