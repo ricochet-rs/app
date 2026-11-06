@@ -1,47 +1,72 @@
-# Ricochet for Mac
+<p align="center">
+  <img src="Support/AppIcon.png" width="128" height="128" alt="The ricochet bunny">
+</p>
 
-Run ricochet on your Mac and deploy your R, Julia, and Python work to it.
+<h1 align="center">ricochet native app</h1>
 
-## Install
+<p align="center">
+  Install and configure ricochet on macOS, Windows, and Linux.
+</p>
 
-You need an Apple Silicon Mac with macOS 15 or later, and R, Julia, or Python.
+<p align="center">
+  <a href="https://github.com/ricochet-rs/app/releases/latest"><strong>Download</strong></a>
+  ·
+  <a href="https://docs.ricochet.rs">Docs</a>
+  ·
+  <a href="https://docs.ricochet.rs/latest/admin/pricing/5-community-edition/">Community Edition</a>
+</p>
 
-1. Download `ricochet-<version>.dmg` from the [latest release](https://github.com/ricochet-rs/macos/releases/latest).
-2. Drag **Ricochet** into **Applications** and open it.
-3. If macOS blocks it, open **System Settings** > **Privacy & Security** and select **Open Anyway**.
-4. Select **I agree** on **Managed auth** to sign in with a ricochet account, or **Configure** on **Your own IdP**.
-5. Select **Install and start**, then sign in.
+---
 
-With managed auth, you sign in at `http://localhost:6188` only, and you share your name and email address with ricochet under its [privacy policy](https://ricochet.rs/legal/privacy/).
-The first person to sign in becomes the admin.
+This repository contains a native app to install and configure ricochet for macOS, Windows, and Linux.
+The ricochet native app will get you up and running with the Community Edition in minutes.
 
-![The Ricochet menu in the macOS menu bar](docs/screenshots/menu.png)
+## Get started
 
-## Use your own identity provider
+1. Download the latest release for your platform.
+2. Open the app and choose where to install ricochet: this machine or one of your SSH hosts.
+3. Choose how people sign in, add a license if you have one, and select **Install and start**.
 
-1. Register an app with your identity provider.
-2. Open **Edit configuration** > **Authentication** and select **Configure** on **Your own IdP**.
-3. Choose **OpenID Connect** or **Microsoft Entra ID** and enter the **Issuer URL**, **Client ID**, and **Client secret**.
-4. Copy the **Redirect URL** into the app you registered, then select **Save and restart**.
-5. After signing in, change your role in **Users** > **People**.
+That's it. ricochet runs in the background, and you can come back to the app any time to change settings, read the logs, or update.
 
-You lose access to the accounts you signed in to before.
+| Platform | Download |
+| --- | --- |
+| macOS (Apple Silicon) | `ricochet-<version>.dmg` |
+| Windows (x86_64) | `ricochet-<version>-windows-x86_64.zip` |
+| Linux (x86_64) | `ricochet-<version>-x86_64.AppImage` |
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/sign-in-dark.png">
-  <img alt="The Authentication pane of the setup window" src="docs/screenshots/sign-in.png">
-</picture>
+## Install on a remote host
 
-## Everyday use
+The ricochet native app can use your existing SSH connections to install ricochet on any of your machines.
+Every host from your SSH config shows up in the app, and you can add one with `user@host`.
 
-Click the rabbit in your menu bar to open, restart, or update ricochet, or to read its logs.
-Ricochet keeps running after you quit the app.
+Each SSH host is expected to be a Linux machine you can reach with key-based SSH access.
 
-## Your files stay private
+## Bring your own languages
 
-Ricochet runs your apps in a sandbox, so they can't read the rest of your home folder or other drives.
+The app doesn't install R, Julia, or Python.
+On macOS and Windows, install them yourself, along with [juliaup](https://github.com/JuliaLang/juliaup) and [uv](https://docs.astral.sh/uv/).
+On Linux, juliaup and uv are vendored in ricochet's `.deb` and `.rpm` installers.
 
-## Uninstall
+## Authentication
 
-Open **Edit configuration** > **Server** and select **Uninstall ricochet**.
-The app moves ricochet and everything you deployed to the Trash, so empty it only when you no longer need them.
+We provide a managed authentication provider that is intended only for local development.
+By using it, you agree to our [privacy policy](https://ricochet.rs/legal/privacy/).
+
+Ready for something more permanent? Bring your own identity provider instead.
+Head to [docs.ricochet.rs](https://docs.ricochet.rs) to learn how to set it up.
+
+## Community Edition
+
+The Community Edition is designed to empower the community while maintaining a clear boundary with enterprise use.
+It comes with a few limits:
+
+- Up to 2 developer users
+- Up to 5 git deployments
+- No private applications
+- No scheduled tasks
+- Audit logging is disabled
+
+Read more in the [Community Edition docs](https://docs.ricochet.rs/latest/admin/pricing/5-community-edition/).
+
+Have a license? Add it during setup, or later under **Server**.

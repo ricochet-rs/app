@@ -1,8 +1,4 @@
-# The Apple Silicon agent runs the `local` backend, so `image` names the shell and there are no containers.
-clone:
-  git:
-    image: codefloe.com/crow-plugins/clone:1.2.2
-
+# Lints and tests the app on the Linux agent, which needs GPUI's window, font and GPU development libraries to compile it.
 when:
   - event: pull_request
   - event: push
@@ -10,23 +6,15 @@ when:
       - ${CI_REPO_DEFAULT_BRANCH}
 
 labels:
-  platform: darwin/arm64
+  agent: thumper
 
 steps:
-  format:
-    image: bash
-    depends_on: []
-    environment:
-      DEVELOPER_DIR: /Library/Developer/CommandLineTools
+  'Lint and test':
+    image: reg.ricochet.rs/docker.io/library/rust:1-bookworm
     commands:
-      - just lint
-
-  test:
-    image: bash
-    depends_on: []
-    environment:
-      # The Command Line Tools ship the SwiftUI SDK and Swift Testing, so the agent needs no Xcode.
-      DEVELOPER_DIR: /Library/Developer/CommandLineTools
-    commands:
-      - just build
-      - just test
+      - apt-get update -qq
+      - apt-get install -y -qq --no-install-recommends build-essential pkg-config cmake clang libasound2-dev libfontconfig-dev libfreetype-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libssl-dev libzstd-dev libvulkan-dev
+      - rustup component add rustfmt clippy
+      - cargo fmt --check
+      - cargo clippy --all-targets -- -D warnings
+      - cargo test

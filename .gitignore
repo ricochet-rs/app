@@ -1,8 +1,6 @@
-# swift build and just test
-.build/
-# Xcode's workspace for Package.swift
-.swiftpm/
-# just app and just dmg
+# cargo build
+/target
+# just app, just dmg, just appimage and just windows
 dist/
 .DS_Store
 .env
