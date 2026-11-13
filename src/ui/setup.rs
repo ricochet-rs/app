@@ -13,6 +13,7 @@ use crate::config::{
 };
 use crate::controller::{Failure, ServerController, ServerStatus};
 use crate::person::Person;
+use crate::updater;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ClipboardItem, Context, Div, Entity, FontWeight, ScrollHandle, Subscription,
@@ -83,6 +84,14 @@ enum People {
     Loaded(Vec<Person>),
 }
 
+/// Where this app stands on a newer version of itself.
+enum AppUpdate {
+    Current,
+    Available(updater::Update),
+    Installing(updater::Update),
+    Failed(updater::Update, String),
+}
+
 pub struct SetupView {
     server: Entity<ServerController>,
     /// The count of config reads from the computer being managed that the fields already show.
@@ -136,6 +145,7 @@ pub struct SetupView {
     /// Whether to list the browsed folder again once the operation running now finishes.
     reload_explorer_when_idle: bool,
     changing_role: bool,
+    app_update: AppUpdate,
     subscriptions: Vec<Subscription>,
     row_subscriptions: Vec<Subscription>,
 }
@@ -191,6 +201,7 @@ impl SetupView {
             delete_choices: Vec::new(),
             reload_explorer_when_idle: false,
             changing_role: false,
+            app_update: AppUpdate::Current,
             subscriptions: vec![cx.observe_in(&server, window, |this, server, window, cx| {
                 if this.reload_explorer_when_idle && server.read(cx).activity.is_none() {
                     this.reload_explorer_when_idle = false;
@@ -217,7 +228,149 @@ impl SetupView {
         view.register_selects(window, cx);
         view.rebuild_rows(window, cx);
         view.sync_inputs(window, cx);
+        if updater::can_update() {
+            view.watch_for_app_updates(cx);
+        }
         view
+    }
+
+    /// Looks for a newer version of the app now and every six hours after.
+    fn watch_for_app_updates(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            loop {
+                let found = cx
+                    .background_executor()
+                    .spawn(async { updater::check().ok().flatten() })
+                    .await;
+                let open = this.update(cx, |this, cx| {
+                    if let Some(update) = found
+                        && matches!(
+                            this.app_update,
+                            AppUpdate::Current | AppUpdate::Available(_)
+                        )
+                    {
+                        this.app_update = AppUpdate::Available(update);
+                        cx.notify();
+                    }
+                });
+                if open.is_err() {
+                    break;
+                }
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(6 * 60 * 60))
+                    .await;
+            }
+        })
+        .detach();
+    }
+
+    /// Installs `update` over this copy of the app, then starts the new version and quits.
+    fn update_app(&mut self, update: updater::Update, cx: &mut Context<Self>) {
+        self.app_update = AppUpdate::Installing(update.clone());
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let installing = update.clone();
+            let result = cx
+                .background_executor()
+                .spawn(async move { installing.install().and_then(|()| updater::relaunch()) })
+                .await;
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(()) => cx.quit(),
+                Err(error) => {
+                    this.app_update = AppUpdate::Failed(update, error.to_string());
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// The strip across the top of the window that offers a newer version of the app.
+    fn app_update_bar(&self, cx: &mut Context<Self>) -> Option<Div> {
+        let dismiss = || {
+            Button::new("dismiss-app-update")
+                .icon(IconName::Close)
+                .tooltip("Dismiss")
+                .ghost()
+                .xsmall()
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.app_update = AppUpdate::Current;
+                    cx.notify();
+                }))
+        };
+        let (marker, message, actions): (AnyElement, String, Vec<AnyElement>) =
+            match &self.app_update {
+                AppUpdate::Current => return None,
+                AppUpdate::Available(update) => {
+                    let update = update.clone();
+                    (
+                        ph("arrow-circle-up")
+                            .size_4()
+                            .text_color(cx.theme().primary)
+                            .into_any_element(),
+                        format!(
+                            "Version {} of the ricochet app is available.",
+                            update.version
+                        ),
+                        vec![
+                            Button::new("update-app")
+                                .label("Update and restart")
+                                .primary()
+                                .xsmall()
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.update_app(update.clone(), cx)
+                                }))
+                                .into_any_element(),
+                            dismiss().into_any_element(),
+                        ],
+                    )
+                }
+                AppUpdate::Installing(update) => (
+                    gpui_component::spinner::Spinner::new()
+                        .xsmall()
+                        .into_any_element(),
+                    format!(
+                        "Updating to version {}. The app will restart when it's done.",
+                        update.version
+                    ),
+                    Vec::new(),
+                ),
+                AppUpdate::Failed(update, error) => {
+                    let update = update.clone();
+                    (
+                        ph("warning")
+                            .size_4()
+                            .text_color(cx.theme().danger)
+                            .into_any_element(),
+                        format!("Couldn't update the app. {error}"),
+                        vec![
+                            Button::new("retry-app-update")
+                                .label("Try again")
+                                .outline()
+                                .xsmall()
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.update_app(update.clone(), cx)
+                                }))
+                                .into_any_element(),
+                            dismiss().into_any_element(),
+                        ],
+                    )
+                }
+            };
+        Some(
+            h_flex()
+                .gap_3()
+                .px_4()
+                .py_2()
+                .items_center()
+                .text_sm()
+                .bg(cx.theme().primary.opacity(0.08))
+                .border_b_1()
+                .border_color(cx.theme().border)
+                .child(marker)
+                .child(div().flex_1().min_w_0().child(prose(message)))
+                .children(actions),
+        )
     }
 
     fn register_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2357,6 +2510,7 @@ impl Render for SetupView {
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
+            .children(self.app_update_bar(cx))
             .child(self.controls(cx))
             .child(rule(cx))
             .child(

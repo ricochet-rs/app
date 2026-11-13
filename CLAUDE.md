@@ -68,6 +68,13 @@ Move what uninstall removes to the Trash on macOS and the Recycle Bin on Windows
 Keep the app itself on uninstall; it returns to the setup state so you can install ricochet again.
 Leave juliaup's Julia installs and uv's Pythons alone, because the person installed those, not the app.
 
+## Updates
+
+The app updates itself from the latest GitHub release of `ricochet-rs/app`, so keep the release file names in the `justfile` equal to the ones `asset_name` in `src/updater.rs` looks for.
+Build releases through `just`, which sets `RICOCHET_APP_VERSION` from the tag; a build without it reports `0.0.0` and never checks for updates.
+Update only an installed copy: the `.app` on macOS, the file in `APPIMAGE` on Linux, and the folder the app runs from on Windows.
+Leave the running ricochet server alone during an app update, because it runs from the launcher copied into the app's support folder, not from the `.app`.
+
 ## renv
 
 Keep `renv_version` in the `justfile` equal to `RENV_VERSION` in ricochet's `utils/vendor-versions.sh`.

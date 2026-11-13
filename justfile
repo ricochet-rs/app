@@ -40,7 +40,7 @@ renv:
 app version="0.0.0": renv
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo build --release --target aarch64-apple-darwin --bins
+    RICOCHET_APP_VERSION="{{ version }}" cargo build --release --target aarch64-apple-darwin --bins
     bin=target/aarch64-apple-darwin/release
     app=dist/ricochet.app
     rm -rf "$app"
@@ -68,7 +68,7 @@ dmg version="0.0.0": (app version)
 appimage version="0.0.0":
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo build --release --bin ricochet-app
+    RICOCHET_APP_VERSION="{{ version }}" cargo build --release --bin ricochet-app
     appdir=dist/ricochet.AppDir
     rm -rf "$appdir"
     mkdir -p dist
@@ -89,7 +89,7 @@ appimage version="0.0.0":
 windows version="0.0.0": renv
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo xwin build --profile windows --target x86_64-pc-windows-msvc --bins
+    RICOCHET_APP_VERSION="{{ version }}" cargo xwin build --profile windows --target x86_64-pc-windows-msvc --bins
     stage=$(mktemp -d)
     trap 'rm -rf "$stage"' EXIT
     cp target/x86_64-pc-windows-msvc/windows/ricochet-app.exe "$stage/ricochet.exe"
