@@ -90,6 +90,7 @@ The repository is private, so every run of `mac.yml` bills macOS minutes; it run
 Build the AppImage on Debian bookworm, the oldest Debian that still gets security updates, because the glibc it links against sets the oldest distribution it runs on.
 Start a script in a Debian container with `set -eu`, never `-o pipefail`, because Crow runs it with dash.
 Cross-compile Windows with cargo-xwin and the `windows` Cargo profile, because no Windows agent exists and GPUI precompiles its Windows shaders only when it builds on Windows; that profile keeps GPUI's debug assertions on, which makes it compile them at run time.
+Run `just lint-windows` beside `just lint`, in `test.yaml` too, because the Linux and macOS lints never compile the Windows-only code.
 Keep `linux.yaml` and `windows.yaml` depending on `release`, because `gh release upload` needs the release `release.yaml` creates.
 Write Crow metadata in brace form (`${CI_COMMIT_TAG}`) and shell-local variables bare or with `$$`, because Crow expands `${...}` before the shell runs, as ricochet's root `CLAUDE.md` explains.
 Make every release step safe to restart: edit the release when it exists, and replace an artifact a previous run uploaded, with `gh release upload --clobber`.

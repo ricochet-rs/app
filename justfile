@@ -1,11 +1,14 @@
 # Keep equal to RENV_VERSION in ricochet's utils/vendor-versions.sh.
 renv_version := "108c2445fa9691d9695f1a139dad91971c9952cb"
 
+# cargo-xwin calls clang-cl, lld-link and llvm-lib by their plain names, which Homebrew and Debian keep off PATH.
+llvm_on_path := 'llvm=$(ls -d /opt/homebrew/opt/llvm/bin /usr/lib/llvm-*/bin 2>/dev/null | sort -V | tail -n 1 || true); if [ -n "$llvm" ]; then export PATH="$llvm:$PATH"; fi'
+
 # Build and run the app
 run:
     cargo run --bin ricochet-app
 
-# Compile the app and the macOS service launcher
+# Compile the app and the service launcher
 build:
     cargo build --release --bins
 
@@ -17,6 +20,13 @@ fmt:
 lint:
     cargo fmt --check
     cargo clippy --all-targets -- -D warnings
+
+# Fail on anything clippy reports in the Windows build, cross-compiled with cargo-xwin
+lint-windows:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ llvm_on_path }}
+    cargo xwin clippy --profile windows --target x86_64-pc-windows-msvc --bins -- -D warnings
 
 # Run the tests
 test:
@@ -89,6 +99,7 @@ appimage version="0.0.0":
 windows version="0.0.0": renv
     #!/usr/bin/env bash
     set -euo pipefail
+    {{ llvm_on_path }}
     RICOCHET_APP_VERSION="{{ version }}" cargo xwin build --profile windows --target x86_64-pc-windows-msvc --bins
     stage=$(mktemp -d)
     trap 'rm -rf "$stage"' EXIT
