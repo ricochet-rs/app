@@ -1,0 +1,75 @@
+# Builds ricochet.app for Apple Silicon and packages it as a .dmg, and on a pushed tag attaches the .dmg to the release from release.yaml.
+# A manual run builds the .dmg and attaches nothing, which tests this workflow without a release.
+# The Apple Silicon agent runs the `local` backend, so `image` names the shell and there are no containers.
+# This workflow polls for the release instead of depending on `release`, because Crow drops a workflow whose dependency does not run, and a manual run has no `release`.
+clone:
+  git:
+    image: codefloe.com/crow-plugins/clone:1.2.2
+    settings:
+      tags: true
+
+when:
+  - event: tag
+  - event: manual
+
+labels:
+  agent: macmini-pat
+  platform: darwin/arm64
+
+steps:
+  'Build the .dmg':
+    image: bash
+    commands:
+      - |
+        set -euo pipefail
+        # The agent starts steps with a short PATH, so add where Homebrew and rustup put their tools.
+        export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:$PATH"
+        command -v cargo > /dev/null || { echo "ERROR: cargo is missing on this agent; install Rust with rustup"; exit 1; }
+        # Each step runs sandboxed, so cargo keeps its downloads in the workspace.
+        export CARGO_HOME="$PWD/.cargo-home"
+        VERSION="${CI_COMMIT_TAG#v}"
+        # A manual run has no tag, so it builds the justfile's default version.
+        just dmg "$${VERSION:-0.0.0}"
+
+  'Attach the .dmg':
+    image: bash
+    depends_on:
+      - 'Build the .dmg'
+    when:
+      - event: tag
+    environment:
+      GITHUB_TOKEN:
+        from_secret: ricochet_issue_token
+    commands:
+      - |
+        set -euo pipefail
+        VERSION="${CI_COMMIT_TAG#v}"
+        ASSET="ricochet-$VERSION.dmg"
+        API="https://api.github.com/repos/${CI_REPO}"
+        AUTH="Authorization: Bearer $GITHUB_TOKEN"
+        # release.yaml publishes the release while this workflow builds, so wait for it when the build finishes first.
+        FOUND=""
+        for _ in $(seq 60); do
+          if curl -fsSL -H "$AUTH" -H "Accept: application/vnd.github+json" "$API/releases/tags/${CI_COMMIT_TAG}" -o release.json; then
+            FOUND=1
+            break
+          fi
+          sleep 15
+        done
+        [ -n "$FOUND" ] || { echo "ERROR: no release for ${CI_COMMIT_TAG} appeared within 15 minutes"; exit 1; }
+        # The agent has no gh, so this uploads through the GitHub API, reading its JSON with macOS's own plutil.
+        RELEASE_ID=$(plutil -extract id raw -o - release.json)
+        # Replace the asset a previous run of this tag uploaded, so a restarted run succeeds.
+        COUNT=$(plutil -extract assets raw -o - release.json)
+        i=0
+        while [ "$i" -lt "$COUNT" ]; do
+          if [ "$(plutil -extract "assets.$i.name" raw -o - release.json)" = "$ASSET" ]; then
+            ASSET_ID=$(plutil -extract "assets.$i.id" raw -o - release.json)
+            curl -fsSL -X DELETE -H "$AUTH" "$API/releases/assets/$ASSET_ID"
+          fi
+          i=$((i + 1))
+        done
+        curl -fsSL -X POST -H "$AUTH" -H "Content-Type: application/x-apple-diskimage" \
+          --data-binary "@dist/$ASSET" \
+          "https://uploads.github.com/repos/${CI_REPO}/releases/$RELEASE_ID/assets?name=$ASSET" > /dev/null
+        echo "Attached $ASSET to ${CI_COMMIT_TAG}"
