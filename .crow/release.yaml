@@ -1,5 +1,5 @@
 # Publishes the GitHub release for a pushed tag, with notes git-sv writes from the commits since the previous tag.
-# linux.yaml and windows.yaml wait for this workflow, and GitHub's mac.yml polls for it, because `gh release upload` needs the release to exist.
+# linux.yaml and windows.yaml wait for this workflow, and mac.yaml polls for it, because an upload needs the release to exist.
 clone:
   git:
     image: codefloe.com/crow-plugins/clone:1.2.3
