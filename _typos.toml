@@ -1,0 +1,11 @@
+# typos configuration: https://github.com/crate-ci/typos
+[files]
+extend-exclude = [
+  # Copied from their upstreams, so their spelling stays as published.
+  ".claude/skills/",
+  "assets/icons/phosphor/",
+]
+
+[default.extend-identifiers]
+# `tasklist /FO CSV` selects the output format on Windows.
+FO = "FO"

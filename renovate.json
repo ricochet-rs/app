@@ -1,0 +1,24 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>ricochet-rs/renovate-config"],
+  "packageRules": [
+    {
+      "description": "GPUI's HTTP client pulls in xattr 0.2.3, which reads libc::ENOATTR on Linux, and libc 0.2.190 removed it.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["libc"],
+      "allowedVersions": "<0.2.190"
+    },
+    {
+      "description": "No test renders the UI, so a person reviews every GPUI release before it merges.",
+      "groupName": "gpui",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["gpui", "gpui-component", "gpui-component-assets"],
+      "automerge": false
+    },
+    {
+      "description": "ricochet's pin decides the toolchain, because the Apple Silicon agent only has the one ricochet uses.",
+      "matchManagers": ["rust-toolchain"],
+      "enabled": false
+    }
+  ]
+}

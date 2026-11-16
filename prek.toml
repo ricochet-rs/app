@@ -1,0 +1,76 @@
+# The GPUI skills and the Phosphor icons are copied from their upstreams, so no hook rewrites them.
+exclude = "^(\\.claude/skills/|assets/icons/phosphor/)"
+
+[[repos]]
+repo = "meta"
+hooks = [
+  { id = "check-hooks-apply" },
+  { id = "check-useless-excludes" },
+]
+
+# rustfmt owns whitespace and the final newline in Rust files.
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "end-of-file-fixer", exclude_types = [
+    "rust",
+  ] },
+  { id = "trailing-whitespace", args = [
+    "--markdown-linebreak-ext=md",
+  ], exclude_types = [
+    "rust",
+  ] },
+  { id = "check-merge-conflict" },
+  { id = "check-added-large-files" },
+  { id = "check-toml" },
+]
+
+[[repos]]
+repo = "https://github.com/DavidAnson/markdownlint-cli2"
+rev = "v0.22.1"
+hooks = [{ id = "markdownlint-cli2" }]
+
+[[repos]]
+repo = "https://github.com/rbubley/mirrors-prettier"
+rev = "v3.9.1"
+hooks = [{ id = "prettier" }]
+
+[[repos]]
+repo = "https://github.com/adrienverge/yamllint.git"
+rev = "v1.38.0"
+hooks = [{ id = "yamllint", args = ["--strict", "-c=.yamllint"] }]
+
+[[repos]]
+repo = "https://github.com/editorconfig-checker/editorconfig-checker"
+rev = "v3.8.0"
+hooks = [{ id = "editorconfig-checker" }]
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "typos"
+name = "typos"
+description = "Source-code spell checker. Requires typos on PATH (brew install typos-cli / apk add typos). Config: _typos.toml."
+entry = "typos"
+language = "system"
+pass_filenames = false
+
+# GitHub Actions also reads .yaml, but mac.yml is referenced by name, so it keeps its extension.
+[[repos.hooks]]
+id = "yaml-file-extension"
+name = "Check if YAML files has *.yaml extension."
+entry = "YAML filenames must have .yaml extension."
+language = "fail"
+files = "\\.yml$"
+exclude = "^\\.github/workflows/mac\\.yml$"
+
+[[repos.hooks]]
+id = "cargo-fmt"
+name = "cargo fmt"
+description = "Format Rust files with rustfmt. Modifies files in place; re-stage after the hook runs."
+entry = "cargo fmt --all"
+language = "system"
+files = "\\.rs$"
+pass_filenames = false
+require_serial = true
