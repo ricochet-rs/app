@@ -11,6 +11,9 @@ clone:
 when:
   - event: tag
   - event: manual
+  # Evidence only, never merged: run on a push to this throwaway branch.
+  - event: push
+    branch: ci/dmg-via-crow-evidence
 
 labels:
   agent: macmini-pat
