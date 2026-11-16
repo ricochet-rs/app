@@ -125,7 +125,8 @@ Write the `.dmg` with `bsdtar` and `hdiutil convert`, never with `hdiutil create
 Keep `rockridge=strict` in the `dmg` recipe, because bsdtar's default clears write permission, and an app copied out of such an image cannot be deleted.
 Keep scripts out of `ricochet.app/Contents/MacOS`, because `codesign` stores a script's signature in extended attributes and the `.dmg`'s ISO 9660 volume keeps none.
 Mount a `.dmg` on a Mac outside Crow after changing how it is made, because the sandbox can't mount one and `just dmg` only reads the app back out of the image.
-Keep `mac.yaml` free of `depends_on`, and let it poll for the release, because Crow drops a workflow whose dependency does not run, and then no manual or pull-request run could build the `.dmg`.
+Keep `mac.yaml` free of `depends_on`, and let it poll for the release, because Crow drops a workflow whose dependency does not run, and then no run without a tag could build the `.dmg`.
+Never run `mac.yaml` for a `pull_request` event, because a pull request can come from a fork, and the Apple Silicon agent runs steps as root on the host, not in a container.
 Build the AppImage on Debian bookworm, the oldest Debian that still gets security updates, because the glibc it links against sets the oldest distribution it runs on.
 Start a script in a Debian container with `set -eu`, never `-o pipefail`, because Crow runs it with dash.
 Cross-compile Windows with cargo-xwin and the `windows` Cargo profile, because no Windows agent exists and GPUI precompiles its Windows shaders only when it builds on Windows; that profile keeps the debug assertions of `gpui-pre-windows` on, which makes it compile them at run time.

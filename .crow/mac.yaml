@@ -1,5 +1,5 @@
 # Builds ricochet.app for Apple Silicon and packages it as a .dmg, and on a pushed tag attaches the .dmg to the release from release.yaml.
-# A manual run, or a pull request that changes how the .dmg is made, builds the .dmg and attaches nothing, which tests this workflow without a release.
+# A manual run, or a push that changes how the .dmg is made, builds the .dmg and attaches nothing, which tests this workflow without a release.
 # The Apple Silicon agent runs the `local` backend, so `image` names the shell and there are no containers.
 # This workflow polls for the release instead of depending on `release`, because Crow drops a workflow whose dependency does not run, and only a tag runs `release`.
 clone:
@@ -11,7 +11,8 @@ clone:
 when:
   - event: tag
   - event: manual
-  - event: pull_request
+  # A push and never a pull request, because a pull request can come from a fork, and this agent runs steps on the host.
+  - event: push
     path:
       include: ['.crow/mac.yaml', 'justfile', 'Support/**']
 
