@@ -100,3 +100,15 @@ Stop scroll-wheel propagation on a scrolling area inside the scrolling page, bec
 Render long lists such as the log through GPUI's `list` with a `ListState`, because building every row on each render makes the window lag.
 Run `just fmt` before every commit, because CI fails on anything `just lint` reports.
 Run `just icons` after changing `Support/logo.svg` and commit what it renders, because `just app` and `just appimage` copy those files and need no `rsvg-convert`.
+
+## Hooks
+
+Run `prek run -a` before every commit, because `.crow/lint.yaml` runs the same hooks on every file.
+Exclude copied upstream files in both `prek.toml` and `_typos.toml`, because typos walks the repository itself and never sees prek's `exclude`.
+Drop the `mac.yml` exclude from the `yaml-file-extension` hook when that file goes, because `check-useless-excludes` fails on an exclude that matches nothing.
+
+## Renovate
+
+Keep the `rust-toolchain` manager disabled in `renovate.json`, because the toolchain follows ricochet's pin by hand.
+Keep `allowedVersions` for `libc` equal to the upper bound in `Cargo.toml`, because Renovate widens a version range it is not told to respect.
+Leave automerge off for the GPUI crates, because no test renders the UI.

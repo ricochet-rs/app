@@ -1,13 +1,41 @@
-# A pull request's title becomes its squash-merge subject, which git-sv reads to choose the next version.
+# Runs the prek hooks on every file, and lints the pull request's title, which becomes its squash-merge subject and tells git-sv the next version.
 when:
   - event: pull_request
   - event: pull_request_edited
+  - event: push
+    branch:
+      - ${CI_REPO_DEFAULT_BRANCH}
 
 labels:
   agent: thumper
 
+cache:
+  - key: prek-v1-{{ arch }}-{{ checksum "prek.toml" }}
+    restore_keys: ['prek-v1-{{ arch }}-']
+    paths: [.cache/prek]
+
 steps:
+  prek:
+    when:
+      - event: pull_request
+      - event: push
+    image: reg.ricochet.rs/docker.io/library/alpine:3.24
+    depends_on: []
+    environment:
+      PREK_VERSION: v0.3.9
+      PREK_HOME: ${CI_WORKSPACE}/.cache/prek
+      # cargo-fmt needs the Rust toolchain, which this image lacks, and test.yaml already runs `cargo fmt --check`.
+      SKIP: cargo-fmt
+    commands:
+      - apk add -q --no-cache curl git nodejs npm python3 py3-pip typos >/dev/null 2>&1
+      - curl --proto '=https' --tlsv1.2 -LsSf https://github.com/j178/prek/releases/download/$$PREK_VERSION/prek-installer.sh | sh -s -- -q
+      - $HOME/.local/bin/prek run -a
+
   commitlint:
+    when:
+      - event: pull_request
+      - event: pull_request_edited
     image: reg.ricochet.rs/docker.io/commitlint/commitlint:21.2.3
+    depends_on: []
     commands:
       - echo $${CI_COMMIT_PULL_REQUEST_TITLE} | commitlint

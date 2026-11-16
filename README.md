@@ -29,11 +29,11 @@ The ricochet native app will get you up and running with the Community Edition i
 
 That's it. ricochet runs in the background, and you can come back to the app any time to change settings, read the logs, or update.
 
-| Platform | Download |
-| --- | --- |
-| macOS (Apple Silicon) | `ricochet-<version>.dmg` |
-| Windows (x86_64) | `ricochet-<version>-windows-x86_64.zip` |
-| Linux (x86_64) | `ricochet-<version>-x86_64.AppImage` |
+| Platform              | Download                                |
+| --------------------- | --------------------------------------- |
+| macOS (Apple Silicon) | `ricochet-<version>.dmg`                |
+| Windows (x86_64)      | `ricochet-<version>-windows-x86_64.zip` |
+| Linux (x86_64)        | `ricochet-<version>-x86_64.AppImage`    |
 
 ## Install on a remote host
 
