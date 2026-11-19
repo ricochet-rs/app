@@ -1,9 +1,9 @@
 //! One content item's page: its overview, logs, runtime, settings and environment variables.
 
 use super::log::LogSource;
-use super::{DashboardView, Loadable, status_color, when};
+use super::{DashboardView, Loadable, when};
 use crate::api::{self, ActiveRun, ContentSettings, Instance, Item};
-use crate::ui::components::{card, card_title, danger_button, field, heading, prose, tab_bar};
+use crate::ui::components::{card, card_title, danger_button, field, pill, prose, tab_bar};
 use crate::ui::icons::ph;
 use gpui::prelude::*;
 use gpui::{AnyElement, App, Context, Div, Entity, FontWeight, Window, div, px};
@@ -29,7 +29,7 @@ impl Tab {
             Self::Logs => "Logs",
             Self::Runtime => "Runtime",
             Self::Settings => "Settings",
-            Self::Environment => "Environment",
+            Self::Environment => "Environment variables",
         }
     }
 
@@ -155,6 +155,9 @@ impl DashboardView {
             Tab::Logs => {
                 if matches!(self.runtime, Loadable::Idle) {
                     self.load_runtime(&item, cx);
+                }
+                if matches!(self.deployments, Loadable::Idle) {
+                    self.load_deployments(&item, cx);
                 }
                 if self.log.source.is_none()
                     && let Some(deployment) = item.deployment_id.clone()
@@ -465,20 +468,42 @@ impl DashboardView {
                 v_flex()
                     .gap_5()
                     .p_6()
-                    .child(heading(&item.name, item.summary.as_deref(), cx))
+                    .child(
+                        h_flex().child(
+                            Button::new("back-to-list")
+                                .icon(ph("arrow-left"))
+                                .label(if item.is_task() { "Tasks" } else { "Apps" })
+                                .ghost()
+                                .small()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.close_item();
+                                    cx.notify();
+                                })),
+                        ),
+                    )
                     .child(
                         h_flex()
-                            .gap_2()
-                            .items_center()
+                            .gap_3()
+                            .items_start()
                             .child(
-                                Button::new("open-item")
-                                    .icon(ph("arrow-square-out"))
-                                    .label("Open")
-                                    .primary()
-                                    .small()
-                                    .on_click(move |_, _, _| {
-                                        let _ = open::that(&open_url);
-                                    }),
+                                v_flex()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .text_2xl()
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .child(item.name.clone()),
+                                    )
+                                    .children(item.summary.clone().filter(|s| !s.is_empty()).map(
+                                        |summary| {
+                                            div()
+                                                .text_sm()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child(prose(summary))
+                                        },
+                                    )),
                             )
                             .when(item.is_task(), |row| {
                                 row.child(
@@ -486,19 +511,36 @@ impl DashboardView {
                                         .icon(ph("play"))
                                         .label("Run now")
                                         .outline()
-                                        .small()
                                         .loading(self.busy == Some("Starting"))
                                         .disabled(self.busy.is_some())
                                         .on_click(cx.listener(|this, _, _, cx| this.run_now(cx))),
                                 )
                             })
-                            .children(self.notice.clone().map(|notice| {
-                                div()
-                                    .text_sm()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(prose(notice))
-                            })),
+                            .child(
+                                Button::new("open-item")
+                                    .icon(ph("arrow-square-out"))
+                                    .label("View live")
+                                    .primary()
+                                    .on_click(move |_, _, _| {
+                                        let _ = open::that(&open_url);
+                                    }),
+                            ),
                     )
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .flex_wrap()
+                            .child(pill("Content type", item.kind(), cx))
+                            .child(pill("Language", item.language_name().to_owned(), cx))
+                            .child(pill("Visibility", api::humanize(&item.access_type), cx))
+                            .child(pill("Updated", super::ago(item.modified_at), cx)),
+                    )
+                    .children(self.notice.clone().map(|notice| {
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(prose(notice))
+                    }))
                     .child(bar)
                     .child(body),
             )
@@ -506,35 +548,27 @@ impl DashboardView {
     }
 
     fn overview_tab(&self, item: &Item, cx: &mut Context<Self>) -> AnyElement {
-        let facts = [
-            ("Type", item.kind()),
-            ("Language", item.language_name().to_owned()),
-            ("Access", api::humanize(&item.access_type)),
-            ("Updated", when(item.modified_at)),
-            (
-                "Your role",
-                item.role
-                    .as_deref()
-                    .map(api::humanize)
-                    .unwrap_or("Admin".into()),
-            ),
-        ];
+        let status = item
+            .deployment_status
+            .as_deref()
+            .map(api::humanize)
+            .unwrap_or_else(|| "Not deployed".into());
+        let role = item
+            .role
+            .as_deref()
+            .map(api::humanize)
+            .unwrap_or_else(|| "Admin".into());
         v_flex()
             .gap_5()
             .child(
-                card(cx).child(h_flex().gap_6().flex_wrap().children(facts.into_iter().map(
-                    |(label, value)| {
-                        v_flex()
-                            .gap_0p5()
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(label),
-                            )
-                            .child(div().text_sm().child(value))
-                    },
-                ))),
+                card(cx).child(card_title("Status", cx)).child(
+                    h_flex()
+                        .gap_2()
+                        .flex_wrap()
+                        .child(pill("Deployment", status, cx))
+                        .child(pill("Last updated", when(item.modified_at), cx))
+                        .child(pill("Your role", role, cx)),
+                ),
             )
             .when_some(item.tags.clone().filter(|t| !t.is_empty()), |pane, tags| {
                 pane.child(
@@ -590,62 +624,202 @@ impl DashboardView {
     }
 
     fn logs_tab(&self, item: &Item, cx: &mut Context<Self>) -> AnyElement {
-        let mut sources: Vec<(String, LogSource)> = Vec::new();
-        if let Some(deployment) = item.deployment_id.clone() {
-            sources.push(("Latest build".into(), LogSource::Build { deployment }));
-        }
-        if let Loadable::Loaded(runtime) = &self.runtime {
-            for (index, instance) in runtime.instances.iter().enumerate() {
-                sources.push((
-                    format!("Instance {}", index + 1),
-                    LogSource::Log {
-                        id: instance.instance_id.clone(),
-                    },
-                ));
+        let build_mode =
+            matches!(self.log.source, Some(LogSource::Build { .. }) | None) && !self.log_runtime;
+        // Each entry: the log to follow, its title, a status word, and the id ricochet knows it by.
+        let mut entries: Vec<(LogSource, String, Option<String>, String)> = Vec::new();
+        let list_state = if build_mode {
+            match &self.deployments {
+                Loadable::Loaded(deployments) => {
+                    for deployment in deployments.iter().take(30) {
+                        entries.push((
+                            LogSource::Build {
+                                deployment: deployment.id.clone(),
+                            },
+                            when(deployment.deployed_at),
+                            Some(api::humanize(&deployment.status)),
+                            deployment.id.clone(),
+                        ));
+                    }
+                    None
+                }
+                Loadable::Failed(message) => Some(failed(message, cx)),
+                _ => Some(h_flex().child(Spinner::new().small()).into_any_element()),
             }
-            for run in &runtime.runs {
-                sources.push((
-                    format!("Run {}", short(&run.id)),
-                    LogSource::Log { id: run.id.clone() },
-                ));
+        } else {
+            match &self.runtime {
+                Loadable::Loaded(runtime) => {
+                    for (index, instance) in runtime.instances.iter().enumerate() {
+                        entries.push((
+                            LogSource::Log {
+                                id: instance.instance_id.clone(),
+                            },
+                            format!("Instance {}", index + 1),
+                            Some(started(&instance.created_at)),
+                            instance.instance_id.clone(),
+                        ));
+                    }
+                    for run in &runtime.runs {
+                        entries.push((
+                            LogSource::Log { id: run.id.clone() },
+                            format!("Run {}", short(&run.id)),
+                            Some(started(&run.started_at)),
+                            run.id.clone(),
+                        ));
+                    }
+                    None
+                }
+                Loadable::Failed(message) => Some(failed(message, cx)),
+                _ => Some(h_flex().child(Spinner::new().small()).into_any_element()),
             }
-        }
-        if let Some(source) = &self.log.source
-            && !sources.iter().any(|(_, known)| known == source)
+        };
+        if let Some(source @ LogSource::Log { id }) = &self.log.source
+            && !build_mode
+            && !entries.iter().any(|(known, ..)| known == source)
         {
-            let label = match source {
-                LogSource::Build { deployment } => format!("Build {}", short(deployment)),
-                LogSource::Log { id } => format!("Run {}", short(id)),
-            };
-            sources.push((label, source.clone()));
+            entries.insert(
+                0,
+                (
+                    source.clone(),
+                    format!("Run {}", short(id)),
+                    None,
+                    id.clone(),
+                ),
+            );
         }
+        let empty_text = match (build_mode, item.is_task()) {
+            (true, _) => "No deployments yet.",
+            (false, true) => {
+                "No runs are going on. Start one with Run now, and its log shows here."
+            }
+            (false, false) => {
+                "No instances are running. ricochet starts one when someone opens the app."
+            }
+        };
+        let loading = if build_mode {
+            matches!(self.deployments, Loadable::Idle | Loadable::Loading)
+        } else {
+            matches!(self.runtime, Loadable::Idle | Loadable::Loading)
+        };
+        let chosen = self.log.source.clone();
+        let accent = cx.theme().ring;
+        let muted_bg = cx.theme().muted;
+        let list = v_flex()
+            .gap_1()
+            .children(list_state)
+            .when(entries.is_empty() && !loading, |list| {
+                list.child(muted(empty_text, cx))
+            })
+            .children(entries.iter().cloned().enumerate().map(
+                |(index, (source, title, status, id))| {
+                    let selected = chosen.as_ref() == Some(&source);
+                    v_flex()
+                        .id(("log-entry", index))
+                        .px_3()
+                        .py_2()
+                        .gap_1()
+                        .cursor_pointer()
+                        .border_l_2()
+                        .border_color(if selected {
+                            accent
+                        } else {
+                            gpui::transparent_black()
+                        })
+                        .when(selected, |entry| entry.bg(muted_bg))
+                        .hover(move |entry| entry.bg(muted_bg))
+                        .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(title))
+                        .children(status.map(|status| {
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(status)
+                        }))
+                        .child(
+                            div()
+                                .text_xs()
+                                .font_family(cx.theme().mono_font_family.clone())
+                                .text_color(cx.theme().muted_foreground)
+                                .truncate()
+                                .child(id),
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.follow_log(source.clone(), cx);
+                            cx.notify();
+                        }))
+                },
+            ));
+        let toggle = |label: &'static str, active: bool, runtime: bool| {
+            div()
+                .id(label)
+                .px_3()
+                .py_1()
+                .text_sm()
+                .cursor_pointer()
+                .when(active, |tab| {
+                    tab.bg(cx.theme().background)
+                        .font_weight(FontWeight::MEDIUM)
+                })
+                .when(!active, |tab| tab.text_color(cx.theme().muted_foreground))
+                .child(label)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.log_runtime = runtime;
+                    cx.notify();
+                }))
+        };
+        let selected_title = entries
+            .iter()
+            .find(|(source, ..)| Some(source) == chosen.as_ref())
+            .map(|(_, title, ..)| title.clone())
+            .unwrap_or_else(|| "Log".into());
         v_flex()
-            .gap_3()
+            .gap_4()
+            .child(
+                h_flex().child(
+                    h_flex()
+                        .p_1()
+                        .bg(cx.theme().muted)
+                        .child(toggle(
+                            if item.is_task() { "Runs" } else { "Runtime" },
+                            !build_mode,
+                            true,
+                        ))
+                        .child(toggle("Deployment", build_mode, false)),
+                ),
+            )
             .child(
                 h_flex()
-                    .gap_1()
-                    .flex_wrap()
-                    .children(
-                        sources
-                            .into_iter()
-                            .enumerate()
-                            .map(|(index, (label, source))| {
-                                let chosen = self.log.source.as_ref() == Some(&source);
-                                let button =
-                                    Button::new(("log-source", index)).label(label).small();
-                                let button = if chosen {
-                                    button.primary()
-                                } else {
-                                    button.outline()
-                                };
-                                button.on_click(cx.listener(move |this, _, _, cx| {
-                                    this.follow_log(source.clone(), cx);
-                                    cx.notify();
-                                }))
-                            }),
+                    .gap_4()
+                    .items_start()
+                    .child(
+                        card(cx)
+                            .w(px(260.0))
+                            .flex_shrink_0()
+                            .gap_3()
+                            .child(
+                                v_flex()
+                                    .child(card_title(
+                                        if build_mode {
+                                            "Deployment logs"
+                                        } else if item.is_task() {
+                                            "Task runs"
+                                        } else {
+                                            "Runtime logs"
+                                        },
+                                        cx,
+                                    ))
+                                    .child(muted("Newest first", cx)),
+                            )
+                            .child(list),
+                    )
+                    .child(
+                        card(cx)
+                            .flex_1()
+                            .min_w_0()
+                            .gap_3()
+                            .child(card_title(&selected_title, cx))
+                            .child(self.log_panel(cx)),
                     ),
             )
-            .child(self.log_panel(cx))
             .into_any_element()
     }
 
@@ -976,12 +1150,7 @@ pub(super) fn deployment_row(index: usize, d: &api::Deployment, cx: &App) -> Div
         .when(index > 0, |row| {
             row.border_t_1().border_color(cx.theme().border)
         })
-        .child(
-            div()
-                .size(px(6.0))
-                .rounded_full()
-                .bg(status_color(&d.status, cx)),
-        )
+        .child(super::status_icon(Some(&d.status), cx))
         .child(div().w(px(110.0)).text_sm().child(api::humanize(&d.status)))
         .child(
             div()

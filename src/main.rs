@@ -52,10 +52,10 @@ fn main() {
                 items: vec![MenuItem::action("Quit ricochet", Quit)],
             }]);
 
-            let bounds = Bounds::centered(None, size(px(900.0), px(680.0)), cx);
+            let bounds = Bounds::centered(None, size(px(1120.0), px(780.0)), cx);
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
-                window_min_size: Some(size(px(680.0), px(480.0))),
+                window_min_size: Some(size(px(860.0), px(560.0))),
                 ..Default::default()
             };
             cx.open_window(options, |window, cx| {

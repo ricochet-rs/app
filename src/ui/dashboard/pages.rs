@@ -4,7 +4,7 @@ use super::item::{Tab, deployment_row, failed, muted};
 use super::log::LogSource;
 use super::{DashboardView, Loadable};
 use crate::api::{self, GitSource};
-use crate::ui::components::{card, card_title, field, heading, prose};
+use crate::ui::components::{card, card_title, field, page_title, prose};
 use crate::ui::icons::ph;
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Div, FontWeight, PathPromptOptions, div};
@@ -157,7 +157,14 @@ impl DashboardView {
                 v_flex()
                     .gap_5()
                     .p_6()
-                    .child(heading(title, Some(summary), cx))
+                    .child(
+                        v_flex().gap_1().child(page_title(title, None)).child(
+                            div()
+                                .text_sm()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(prose(summary.to_owned())),
+                        ),
+                    )
                     .child(content),
             )
             .into_any_element()
@@ -199,7 +206,7 @@ impl DashboardView {
                 .into_any_element(),
         };
         self.page_frame(
-            "Deployments",
+            "Deployment history",
             "The latest deployments of every item you can see. Select one to read its build log.",
             card(cx).child(body),
             cx,

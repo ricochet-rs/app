@@ -22,6 +22,7 @@ The **Content** page in `src/ui/dashboard.rs` shows a server's content natively 
 List managed machines and added servers in the one server menu of `SetupView`, and show settings only for a managed machine, so the window never has two switchers that both mean "which server".
 List only the machines you connected to in that menu, never every host in the SSH config, which only the add-machine step offers.
 Keep content items in the order ricochet sends them.
+Lay out the Content pages like ricochet's web UI, with a table for Apps and Tasks, a full-width item page with label and value pills, and the open page's sidebar row filled with the primary colour, so the app and the server look like one product.
 Offer OpenID Connect and Entra only: ricochet refuses a SAML assertion consumer URL that is not `https`, and the server here serves `http://localhost`.
 
 ## App

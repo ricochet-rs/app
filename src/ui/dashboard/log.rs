@@ -101,6 +101,7 @@ impl LogView {
 impl DashboardView {
     pub(super) fn follow_log(&mut self, source: LogSource, cx: &mut Context<Self>) {
         self.log.stop();
+        self.log_runtime = matches!(source, LogSource::Log { .. });
         self.log = LogView {
             source: Some(source.clone()),
             state: LogState::Waiting,

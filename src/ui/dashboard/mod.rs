@@ -8,23 +8,18 @@ use item::Tab;
 mod item;
 mod log;
 mod pages;
+mod table;
 use crate::connections::Connection;
 use crate::controller::{DEFAULT_PORT, ServerController, ServerStatus};
 use crate::servers::{Instance, Placement, Server, Servers};
 use gpui::prelude::*;
-use gpui::{
-    AnyElement, App, Context, Div, Entity, FontWeight, Hsla, Subscription, Window, div, px,
-    uniform_list,
-};
+use gpui::{AnyElement, App, Context, Div, Entity, Subscription, Window, div, px};
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, Disableable, Sizable, h_flex, v_flex};
-use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-
-const ITEM_HEIGHT: f32 = 52.0;
 
 /// Asks the window to show where ricochet can be installed, instead of connecting by address.
 pub struct InstallInstead;
@@ -79,10 +74,10 @@ pub enum Page {
 
 impl Page {
     pub const ALL: [Self; 5] = [
+        Self::Deploy,
         Self::Apps,
         Self::Tasks,
         Self::Deployments,
-        Self::Deploy,
         Self::Credentials,
     ];
 
@@ -90,7 +85,7 @@ impl Page {
         match self {
             Self::Apps => "Apps",
             Self::Tasks => "Tasks",
-            Self::Deployments => "Deployments",
+            Self::Deployments => "Deployment history",
             Self::Deploy => "Deploy",
             Self::Credentials => "Credentials",
         }
@@ -136,6 +131,8 @@ pub struct DashboardView {
     settings: Loadable<item::Settings>,
     access: String,
     log: log::LogView,
+    /// Whether the Logs tab lists runtime logs or task runs rather than deployments.
+    log_runtime: bool,
     /// Values for text fields that wait for a window to set them.
     pending_inputs: Vec<(Entity<InputState>, String)>,
     all_deployments: Loadable<Vec<(String, Deployment)>>,
@@ -216,6 +213,7 @@ impl DashboardView {
             settings: Loadable::Idle,
             access: String::new(),
             log: log::LogView::default(),
+            log_runtime: false,
             pending_inputs: Vec::new(),
             all_deployments: Loadable::Idle,
             credentials: Loadable::Idle,
@@ -823,114 +821,6 @@ impl DashboardView {
             .collect()
     }
 
-    fn item_rows(&mut self, range: Range<usize>, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let items = self.visible_items(cx);
-        let accent = cx.theme().sidebar_accent;
-        let muted = cx.theme().muted_foreground;
-        items
-            .into_iter()
-            .enumerate()
-            .skip(range.start)
-            .take(range.len())
-            .map(|(index, item)| {
-                let selected = self.selected.as_deref() == Some(&item.id);
-                let color = status_color(item.deployment_status.as_deref().unwrap_or(""), cx);
-                let id = item.id.clone();
-                h_flex()
-                    .id(("item", index))
-                    .h(px(ITEM_HEIGHT))
-                    .px_3()
-                    .gap_3()
-                    .items_center()
-                    .cursor_pointer()
-                    .map(|row| {
-                        if selected {
-                            row.bg(accent)
-                        } else {
-                            row.hover(move |row| row.bg(accent.opacity(0.8)))
-                        }
-                    })
-                    .child(ph(kind_icon(&item)).size_4().text_color(muted))
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .truncate()
-                                    .child(item.name.clone()),
-                            )
-                            .child(div().text_xs().text_color(muted).truncate().child(format!(
-                                "{} · {}",
-                                item.kind(),
-                                item.language_name()
-                            ))),
-                    )
-                    .child(div().size(px(6.0)).rounded_full().bg(color))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        let tab = this.tab;
-                        this.open_item(id.clone(), tab, cx)
-                    }))
-                    .into_any_element()
-            })
-            .collect()
-    }
-
-    fn content_list(&self, cx: &mut Context<Self>) -> Div {
-        let count = self.visible_items(cx).len();
-        let empty = self
-            .items()
-            .iter()
-            .all(|item| item.is_task() != (self.page == Page::Tasks));
-        v_flex()
-            .w(px(260.0))
-            .flex_shrink_0()
-            .h_full()
-            .border_r_1()
-            .border_color(cx.theme().border)
-            .child(
-                h_flex()
-                    .gap_2()
-                    .p_3()
-                    .child(
-                        div()
-                            .flex_1()
-                            .child(Input::new(&self.search).cleanable(true)),
-                    )
-                    .child(
-                        Button::new("refresh")
-                            .icon(ph("arrow-clockwise"))
-                            .tooltip("Refresh")
-                            .ghost()
-                            .small()
-                            .on_click(cx.listener(|this, _, _, cx| this.load(cx))),
-                    ),
-            )
-            .child(if empty {
-                div()
-                    .p_4()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(prose(if self.page == Page::Tasks {
-                        "No tasks are deployed to this server yet."
-                    } else {
-                        "No apps are deployed to this server yet."
-                    }))
-                    .into_any_element()
-            } else {
-                uniform_list(
-                    "content-list",
-                    count,
-                    cx.processor(|this, range, _, cx| this.item_rows(range, cx)),
-                )
-                .flex_1()
-                .min_h_0()
-                .into_any_element()
-            })
-    }
-
     fn body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         if self.adding_server || matches!(self.content, Content::NoServer) {
             return self
@@ -960,12 +850,10 @@ impl DashboardView {
                 self.centered(alert, cx).into_any_element()
             }
             Content::Loaded(_) => match self.page {
-                Page::Apps | Page::Tasks => h_flex()
-                    .flex_1()
-                    .min_h_0()
-                    .child(self.content_list(cx))
-                    .child(self.item_detail(window, cx))
-                    .into_any_element(),
+                Page::Apps | Page::Tasks if self.selected_item().is_some() => {
+                    self.item_detail(window, cx)
+                }
+                Page::Apps | Page::Tasks => self.content_table(cx),
                 Page::Deployments => self.deployments_page(cx),
                 Page::Deploy => self.deploy_page(cx),
                 Page::Credentials => self.credentials_page(cx),
@@ -985,22 +873,31 @@ impl Render for DashboardView {
     }
 }
 
-fn status_color(status: &str, cx: &App) -> Hsla {
-    match status {
-        "success" => cx.theme().success,
-        "failure" | "timeout" => cx.theme().danger,
-        "pending" => cx.theme().warning,
-        _ => cx.theme().muted_foreground,
-    }
+/// The icon ricochet shows for a deployment status: a check, a cross, or a clock while pending.
+fn status_icon(status: Option<&str>, cx: &App) -> gpui_component::Icon {
+    let (icon, color) = match status {
+        Some("success") => ("check-circle", cx.theme().success),
+        Some("failure" | "timeout" | "dependency_mismatch") => ("x-circle", cx.theme().danger),
+        _ => ("clock", cx.theme().muted_foreground),
+    };
+    ph(icon).size_5().text_color(color)
 }
 
-fn kind_icon(item: &Item) -> &'static str {
-    match item.kind().as_str() {
-        "API" => "code-simple",
-        "Script" => "timer",
-        kind if kind.ends_with("document") => "book-open",
-        _ => "app-window",
+/// How long ago a Unix timestamp was, as ricochet writes it: "5m ago", "6mo ago", or "Never".
+fn ago(timestamp: i64) -> String {
+    if timestamp <= 0 {
+        return "Never".into();
     }
+    let seconds = (chrono::Utc::now().timestamp() - timestamp).max(0);
+    let (amount, unit) = match seconds {
+        0..60 => return "Just now".into(),
+        60..3_600 => (seconds / 60, "m"),
+        3_600..86_400 => (seconds / 3_600, "h"),
+        86_400..2_592_000 => (seconds / 86_400, "d"),
+        2_592_000..31_536_000 => (seconds / 2_592_000, "mo"),
+        _ => (seconds / 31_536_000, "y"),
+    };
+    format!("{amount}{unit} ago")
 }
 
 /// A Unix timestamp in this computer's time zone, such as "Nov 19, 2026 at 14:05".

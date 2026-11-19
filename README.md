@@ -46,8 +46,8 @@ Each SSH host is expected to be a Linux machine you can reach with key-based SSH
 
 The **Content** pages at the top of the sidebar show what is deployed to a ricochet server, right in the app.
 
-- **Apps** and **Tasks** list the items you can access. Each item has an overview with its deployment history, its build, instance and run logs, what is running now, its settings and schedule, and its environment variables.
-- **Deployments** lists the latest deployments of every item, and opens a build log when you select one.
+- **Apps** and **Tasks** list the items you can access in a table, as ricochet's web UI does. Each item has an overview with its deployment history, its build, instance and run logs, what is running now, its settings and schedule, and its environment variables.
+- **Deployment history** lists the latest deployments of every item, and opens a build log when you select one.
 - **Deploy** deploys from a Git repository, or uploads a project folder with a `_ricochet.toml` the way `ricochet deploy` does.
 - **Credentials** lists your Git credentials.
 

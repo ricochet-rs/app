@@ -857,9 +857,10 @@ impl SetupView {
         cx: &Context<Self>,
     ) -> gpui::Stateful<Div> {
         let accent = cx.theme().sidebar_accent;
+        let (primary, on_primary) = (cx.theme().primary, cx.theme().primary_foreground);
         h_flex()
             .id(id)
-            .h_7()
+            .h_8()
             .px_2()
             .gap_2()
             .items_center()
@@ -867,12 +868,18 @@ impl SetupView {
             .cursor_pointer()
             .map(|row| {
                 if active {
-                    row.bg(accent).font_weight(FontWeight::MEDIUM)
+                    row.bg(primary)
+                        .text_color(on_primary)
+                        .font_weight(FontWeight::MEDIUM)
                 } else {
                     row.hover(move |row| row.bg(accent.opacity(0.8)))
                 }
             })
-            .child(ph(icon).size_4().text_color(cx.theme().muted_foreground))
+            .child(ph(icon).size_4().text_color(if active {
+                on_primary
+            } else {
+                cx.theme().muted_foreground
+            }))
             .child(div().flex_1().truncate().child(label))
             .when(needs_answer, |row| {
                 row.child(div().size(px(6.0)).rounded_full().bg(cx.theme().danger))
