@@ -18,7 +18,8 @@ If authentication, synchronization, HEAD validation, or a required read fails, s
 The app is a simple way to install ricochet's Community Edition for local development, and to install and configure ricochet on remote Linux hosts over SSH.
 It builds for Apple Silicon macOS, x86_64 Linux and x86_64 Windows.
 Never write a `[backend]` section, because content runs as processes on the machine and Kubernetes and containers are out of scope.
-The **Content** tab in `src/ui/dashboard.rs` shows a server's content natively in GPUI through ricochet's REST API, for the managed server and for any server added by address.
+The **Content** page in `src/ui/dashboard.rs` shows a server's content natively in GPUI through ricochet's REST API, for the managed server and for any server added by address.
+List managed machines and added servers in the one server menu of `SetupView`, and show settings only for a managed machine, so the window never has two switchers that both mean "which server".
 Offer OpenID Connect and Entra only: ricochet refuses a SAML assertion consumer URL that is not `https`, and the server here serves `http://localhost`.
 
 ## App

@@ -24,7 +24,7 @@ use gpui::{
     actions, px, size,
 };
 use gpui_component::Root;
-use ui::workspace::Workspace;
+use ui::setup::SetupView;
 
 actions!(ricochet, [Quit]);
 
@@ -62,7 +62,7 @@ fn main() {
                     .observe_window_appearance(|window, cx| ui::theme::apply(Some(window), cx))
                     .detach();
                 let server = cx.new(ServerController::new);
-                let view = cx.new(|cx| Workspace::new(server, window, cx));
+                let view = cx.new(|cx| SetupView::new(server, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             })
             .expect("ricochet could not open its window");

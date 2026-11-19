@@ -4,6 +4,7 @@ use super::components::{
     callout, card, card_title, danger_button, error_alert, heading, prose, rule, segmented,
     selection_mark, setting_row, tab_bar,
 };
+use super::dashboard::DashboardView;
 use super::icons::ph;
 use super::section::SetupSection;
 use crate::config::section::{Field as _, SettingsSection as _};
@@ -11,8 +12,10 @@ use crate::config::{
     AuthenticationSettings, Encryption, LogLevel, LogRotation, PackageIndex, Provider, RRepository,
     Role, ServerConfig,
 };
+use crate::connections::Connection;
 use crate::controller::{Failure, ServerController, ServerStatus};
 use crate::person::Person;
+use crate::servers::Server;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ClipboardItem, Context, Div, Entity, FontWeight, ScrollHandle, Subscription,
@@ -83,13 +86,12 @@ enum People {
     Loaded(Vec<Person>),
 }
 
-/// Asks the window to show the content of the server being managed.
-pub struct OpenDashboard;
-
-impl gpui::EventEmitter<OpenDashboard> for SetupView {}
-
 pub struct SetupView {
     server: Entity<ServerController>,
+    /// The content of the server shown, managed or added by address.
+    dashboard: Entity<DashboardView>,
+    /// Whether the Content page shows instead of a settings pane.
+    showing_content: bool,
     /// The count of config reads from the computer being managed that the fields already show.
     seen_generation: u64,
     /// Whether to keep a remote ricochet running after you log out of that computer.
@@ -157,8 +159,11 @@ impl SetupView {
         let log_following = std::rc::Rc::new(std::cell::Cell::new(true));
         let host_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("my-server or user@host"));
+        let dashboard = cx.new(|cx| DashboardView::new(server.clone(), window, cx));
+        let showing_added = dashboard.read(cx).added_server().is_some();
         let mut view = Self {
-            onboarding: first_run.then_some(Step::Welcome),
+            onboarding: (first_run && !showing_added).then_some(Step::Welcome),
+            showing_content: !first_run || showing_added,
             seen_generation: 0,
             keep_running: true,
             page_scroll: ScrollHandle::default(),
@@ -196,26 +201,30 @@ impl SetupView {
             delete_choices: Vec::new(),
             reload_explorer_when_idle: false,
             changing_role: false,
-            subscriptions: vec![cx.observe_in(&server, window, |this, server, window, cx| {
-                if this.reload_explorer_when_idle && server.read(cx).activity.is_none() {
-                    this.reload_explorer_when_idle = false;
-                    this.reload_explorer(cx);
-                }
-                if this.submitted && server.read(cx).activity.is_none() {
-                    this.submitted = false;
-                    if server.read(cx).failure.is_none() {
-                        this.saved_issuer = Some(this.config.authentication.issuer());
-                        if this.onboarding == Some(Step::Installing) {
-                            this.onboarding = Some(Step::Done);
+            subscriptions: vec![
+                cx.observe(&dashboard, |_, _, cx| cx.notify()),
+                cx.observe_in(&server, window, |this, server, window, cx| {
+                    if this.reload_explorer_when_idle && server.read(cx).activity.is_none() {
+                        this.reload_explorer_when_idle = false;
+                        this.reload_explorer(cx);
+                    }
+                    if this.submitted && server.read(cx).activity.is_none() {
+                        this.submitted = false;
+                        if server.read(cx).failure.is_none() {
+                            this.saved_issuer = Some(this.config.authentication.issuer());
+                            if this.onboarding == Some(Step::Installing) {
+                                this.onboarding = Some(Step::Done);
+                            }
                         }
                     }
-                }
-                if server.read(cx).generation != this.seen_generation {
-                    this.show_computer(window, cx);
-                }
-                cx.notify();
-            })],
+                    if server.read(cx).generation != this.seen_generation {
+                        this.show_computer(window, cx);
+                    }
+                    cx.notify();
+                }),
+            ],
             row_subscriptions: Vec::new(),
+            dashboard,
             server,
         };
         view.register_inputs(window, cx);
@@ -484,6 +493,7 @@ impl SetupView {
 
     fn select(&mut self, section: SetupSection, cx: &mut Context<Self>) {
         self.section = section;
+        self.showing_content = false;
         if section == SetupSection::Users && self.users_tab == UsersTab::People {
             self.load_people(cx);
         }
@@ -493,6 +503,40 @@ impl SetupView {
             self.stop_following_logs();
         }
         cx.notify();
+    }
+
+    fn show_content(&mut self, cx: &mut Context<Self>) {
+        self.showing_content = true;
+        self.stop_following_logs();
+        cx.notify();
+    }
+
+    /// Shows a machine this app manages, connecting to it first when it is not the current one.
+    fn show_machine(&mut self, target: Connection, cx: &mut Context<Self>) {
+        self.dashboard
+            .update(cx, |dashboard, cx| dashboard.show_managed(cx));
+        let server = self.server.read(cx);
+        if target != server.connection {
+            self.server
+                .update(cx, |server, cx| server.switch(target, cx));
+        } else if !server.is_configured {
+            self.onboarding = Some(Step::Welcome);
+        }
+        cx.notify();
+    }
+
+    fn show_added(&mut self, server: Server, cx: &mut Context<Self>) {
+        self.dashboard
+            .update(cx, |dashboard, cx| dashboard.show_server(&server, cx));
+        self.onboarding = None;
+        self.show_content(cx);
+    }
+
+    fn add_server(&mut self, cx: &mut Context<Self>) {
+        self.dashboard
+            .update(cx, |dashboard, cx| dashboard.start_adding(cx));
+        self.onboarding = None;
+        self.show_content(cx);
     }
 
     /// Shows the answers saved on the computer just connected to, and moves to whatever it needs next.
@@ -621,6 +665,41 @@ impl SetupView {
     // MARK: Controls
 
     fn controls(&self, cx: &mut Context<Self>) -> Div {
+        if let Some(added) = self.dashboard.read(cx).added_server() {
+            let url = added.url.clone();
+            return h_flex()
+                .gap_3()
+                .px_4()
+                .py_3()
+                .items_center()
+                .child(
+                    v_flex()
+                        .gap_0p5()
+                        .child(
+                            div()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(prose("ricochet")),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(added.url.clone()),
+                        ),
+                )
+                .child(self.machine_menu("globe", added.name, cx))
+                .child(div().flex_1())
+                .child(
+                    Button::new("open-in-browser")
+                        .icon(ph("arrow-square-out"))
+                        .label("Open in browser")
+                        .outline()
+                        .small()
+                        .on_click(move |_, _, _| {
+                            let _ = open::that(&url);
+                        }),
+                );
+        }
         let server = self.server.read(cx);
         let busy = server.activity.is_some();
         let (label, color) = match server.status {
@@ -725,7 +804,7 @@ impl SetupView {
                         .primary()
                         .small()
                         .disabled(!running || busy)
-                        .on_click(cx.listener(|_, _, _, cx| cx.emit(OpenDashboard))),
+                        .on_click(cx.listener(|this, _, _, cx| this.show_content(cx))),
                 )
                 .child(if stopped {
                     Button::new("start")
@@ -756,8 +835,7 @@ impl SetupView {
             })
     }
 
-    /// The computers you can switch to, shown under the bar while it is open.
-    /// The machine button, which drops a menu of every machine, a check on the current one, and **Add machine**.
+    /// The server button, which drops a menu of every machine and added server, a check on the one shown, and ways to add more.
     fn machine_menu(
         &self,
         icon: &'static str,
@@ -765,9 +843,16 @@ impl SetupView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let server = self.server.read(cx);
-        let active = server.connection.clone();
+        let connection = server.connection.clone();
         let busy = server.activity.is_some();
-        let choices = server.choices();
+        let machines = server.choices();
+        let dashboard = self.dashboard.read(cx);
+        let added = dashboard.added_servers();
+        let showing = dashboard.added_server();
+        let signed_in = dashboard
+            .active_server(cx)
+            .filter(|shown| dashboard.is_signed_in(shown));
+        let dashboard = self.dashboard.clone();
         let view = cx.entity();
         Button::new("connection")
             .icon(ph(icon))
@@ -776,36 +861,73 @@ impl SetupView {
             .small()
             .disabled(busy)
             .dropdown_menu(move |mut menu, _, _| {
-                for choice in &choices {
-                    let target = choice.clone();
+                for machine in &machines {
+                    let target = machine.clone();
                     let view = view.clone();
                     menu = menu.item(
-                        PopupMenuItem::new(choice.name())
-                            .icon(ph(if choice.is_remote() {
+                        PopupMenuItem::new(machine.name())
+                            .icon(ph(if machine.is_remote() {
                                 "hard-drives"
                             } else {
                                 "desktop"
                             }))
-                            .checked(*choice == active)
+                            .checked(showing.is_none() && *machine == connection)
                             .on_click(move |_, _, cx| {
                                 let target = target.clone();
-                                view.update(cx, |this, cx| {
-                                    this.server
-                                        .update(cx, |server, cx| server.switch(target, cx));
-                                });
+                                view.update(cx, |this, cx| this.show_machine(target, cx));
                             }),
                     );
                 }
-                let view = view.clone();
-                menu.separator()
+                for added in &added {
+                    let target = added.clone();
+                    let view = view.clone();
+                    menu = menu.item(
+                        PopupMenuItem::new(added.name.clone())
+                            .icon(ph("globe"))
+                            .checked(showing.as_ref() == Some(added))
+                            .on_click(move |_, _, cx| {
+                                let target = target.clone();
+                                view.update(cx, |this, cx| this.show_added(target, cx));
+                            }),
+                    );
+                }
+                let (add_machine, add_server) = (view.clone(), view.clone());
+                menu = menu
+                    .separator()
                     .item(PopupMenuItem::new("Add machine").icon(ph("plus")).on_click(
                         move |_, _, cx| {
-                            view.update(cx, |this, cx| {
+                            add_machine.update(cx, |this, cx| {
+                                this.dashboard
+                                    .update(cx, |dashboard, cx| dashboard.show_managed(cx));
                                 this.onboarding = Some(Step::Target);
                                 cx.notify();
                             });
                         },
                     ))
+                    .item(PopupMenuItem::new("Add server").icon(ph("globe")).on_click(
+                        move |_, _, cx| add_server.update(cx, |this, cx| this.add_server(cx)),
+                    ));
+                if let Some(shown) = signed_in.clone() {
+                    let dashboard = dashboard.clone();
+                    menu = menu.item(
+                        PopupMenuItem::new(format!("Sign out of {}", shown.name))
+                            .icon(ph("sign-in"))
+                            .on_click(move |_, _, cx| {
+                                dashboard.update(cx, |d, cx| d.sign_out(&shown, cx))
+                            }),
+                    );
+                }
+                if let Some(shown) = showing.clone() {
+                    let dashboard = dashboard.clone();
+                    menu = menu.item(
+                        PopupMenuItem::new(format!("Remove {}", shown.name))
+                            .icon(ph("trash"))
+                            .on_click(move |_, _, cx| {
+                                dashboard.update(cx, |d, cx| d.remove_server(&shown, cx))
+                            }),
+                    );
+                }
+                menu
             })
     }
 
@@ -854,7 +976,7 @@ impl SetupView {
             label,
             section.icon(),
             label,
-            self.section == section,
+            !self.showing_content && self.section == section,
             section.problem(&self.config).is_some(),
             cx,
         )
@@ -883,7 +1005,7 @@ impl SetupView {
                 "Server",
                 SetupSection::Server.icon(),
                 "Server",
-                on_server_page && !open,
+                on_server_page && !open && !self.showing_content,
                 server_needs_answer && !open,
                 cx,
             )
@@ -919,17 +1041,33 @@ impl SetupView {
                     self.sidebar_item(section, label, cx)
                 }))
         });
-        v_flex()
+        let content = self
+            .sidebar_row(
+                "Content",
+                "squares-four",
+                "Content",
+                self.showing_content,
+                false,
+                cx,
+            )
+            .on_click(cx.listener(|this, _, _, cx| this.show_content(cx)));
+        let sidebar = v_flex()
             .w(px(220.0))
             .flex_shrink_0()
             .h_full()
             .px_3()
+            .pt_3()
             .pb_3()
             .gap_0p5()
             .bg(cx.theme().sidebar)
             .text_color(cx.theme().sidebar_foreground)
             .border_r_1()
             .border_color(cx.theme().sidebar_border)
+            .child(content);
+        if self.dashboard.read(cx).added_server().is_some() {
+            return sidebar;
+        }
+        sidebar
             .child(group_label("Required"))
             .child(self.sidebar_item(
                 SetupSection::Authentication,
@@ -949,6 +1087,23 @@ impl SetupView {
     // MARK: Detail
 
     fn detail(&self, cx: &mut Context<Self>) -> Div {
+        if self.showing_content {
+            let failure = self.server.read(cx).failure.clone();
+            let server = self.server.clone();
+            return v_flex()
+                .flex_1()
+                .min_w_0()
+                .h_full()
+                .children(failure.map(|failure| {
+                    div().p_4().child(error_alert(
+                        &failure.title,
+                        &failure.message,
+                        move |_, _, cx| server.update(cx, |server, cx| server.dismiss_failure(cx)),
+                        cx,
+                    ))
+                }))
+                .child(v_flex().flex_1().min_h_0().child(self.dashboard.clone()));
+        }
         let server = self.server.read(cx);
         let activity = server.activity.clone();
         let failure = server.failure.clone();
@@ -2353,7 +2508,7 @@ impl Render for SetupView {
         if let Some(step) = self.onboarding {
             return self.onboarding_view(step, cx);
         }
-        if self.server.read(cx).loading {
+        if self.server.read(cx).loading && self.dashboard.read(cx).added_server().is_none() {
             return self.connecting_view(cx);
         }
         self.viewport_height = window.viewport_size().height;

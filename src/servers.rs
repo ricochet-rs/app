@@ -116,14 +116,6 @@ impl Servers {
             self.active = None;
         }
     }
-
-    /// The managed server first, when there is one, then the servers you added.
-    pub fn choices(&self, managed: Option<Server>) -> Vec<Server> {
-        managed
-            .into_iter()
-            .chain(self.urls.iter().map(|url| Server::remote(url)))
-            .collect()
-    }
 }
 
 #[cfg(test)]
@@ -131,15 +123,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn managed_servers_come_first_and_keys_follow_their_id() {
+    fn servers_are_added_once_and_keys_follow_their_id() {
         let mut servers = Servers::default();
         let remote = servers.add("https://ricochet.example.com");
         servers.add("https://ricochet.example.com");
         servers.set_key(&remote, Some("rico_1".into()));
         let local = Server::managed(&Connection::Local, "http://localhost:6188".into());
-        let choices = servers.choices(Some(local.clone()));
-        assert_eq!(choices, [local.clone(), remote.clone()]);
-        assert_eq!(choices[1].name, "ricochet.example.com");
+        assert_eq!(servers.urls, ["https://ricochet.example.com"]);
+        assert_eq!(remote.name, "ricochet.example.com");
         assert_eq!(servers.key(&remote), Some("rico_1"));
         assert_eq!(servers.key(&local), None);
     }

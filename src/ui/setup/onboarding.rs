@@ -651,13 +651,25 @@ impl SetupView {
         let (left, right): (Option<AnyElement>, Option<AnyElement>) = match step {
             Step::Welcome => (
                 Some(
-                    Button::new("advanced")
-                        .label("Skip to settings")
-                        .ghost()
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.onboarding = None;
-                            cx.notify();
-                        }))
+                    h_flex()
+                        .gap_2()
+                        .child(
+                            Button::new("advanced")
+                                .label("Skip to settings")
+                                .ghost()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.onboarding = None;
+                                    this.showing_content = false;
+                                    cx.notify();
+                                })),
+                        )
+                        .child(
+                            Button::new("connect-to-server")
+                                .icon(ph("globe"))
+                                .label("Connect to a server")
+                                .ghost()
+                                .on_click(cx.listener(|this, _, _, cx| this.add_server(cx))),
+                        )
                         .into_any_element(),
                 ),
                 Some(next("Get started", "arrow-right", Step::Target, None, cx).into_any_element()),

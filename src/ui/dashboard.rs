@@ -12,7 +12,6 @@ use gpui::{
 };
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, Disableable, Sizable, h_flex, v_flex};
 use std::ops::Range;
@@ -127,11 +126,6 @@ impl DashboardView {
         view
     }
 
-    /// Whether there is any server to show, managed or added.
-    pub fn has_servers(&self, cx: &App) -> bool {
-        !self.choices(cx).is_empty()
-    }
-
     // MARK: Servers
 
     fn managed_server(&self, cx: &App) -> Option<Server> {
@@ -145,27 +139,61 @@ impl DashboardView {
         (self.managed_server(cx), self.server.read(cx).status)
     }
 
-    fn choices(&self, cx: &App) -> Vec<Server> {
-        self.store.choices(self.managed_server(cx))
-    }
-
-    fn active_server(&self, cx: &App) -> Option<Server> {
-        let choices = self.choices(cx);
-        let active = self.store.active.as_deref();
-        choices
+    /// The servers you added by address.
+    pub fn added_servers(&self) -> Vec<Server> {
+        self.store
+            .urls
             .iter()
-            .find(|server| Some(server.id.as_str()) == active)
-            .or(choices.first())
-            .cloned()
+            .map(|url| Server::remote(url))
+            .collect()
     }
 
-    fn show_server(&mut self, server: &Server, cx: &mut Context<Self>) {
-        self.store.active = Some(server.id.clone());
-        self.store.save();
+    /// The server added by address that is showing, or `None` while the managed server shows.
+    pub fn added_server(&self) -> Option<Server> {
+        let active = self.store.active.as_deref()?;
+        self.store
+            .urls
+            .iter()
+            .any(|url| url == active)
+            .then(|| Server::remote(active))
+    }
+
+    /// The server whose content shows: the added one you picked, otherwise the managed one.
+    pub fn active_server(&self, cx: &App) -> Option<Server> {
+        self.added_server().or_else(|| self.managed_server(cx))
+    }
+
+    pub fn is_signed_in(&self, server: &Server) -> bool {
+        self.store.key(server).is_some()
+    }
+
+    fn reset_selection(&mut self) {
         self.selected = None;
         self.deployments = None;
         self.adding_server = false;
+        self.notice = None;
+    }
+
+    pub fn show_server(&mut self, server: &Server, cx: &mut Context<Self>) {
+        self.store.active = Some(server.id.clone());
+        self.store.save();
+        self.reset_selection();
         self.load(cx);
+    }
+
+    /// Shows the content of the server this app manages.
+    pub fn show_managed(&mut self, cx: &mut Context<Self>) {
+        self.store.active = None;
+        self.store.save();
+        self.reset_selection();
+        self.load(cx);
+    }
+
+    /// Shows the form that adds a server by address.
+    pub fn start_adding(&mut self, cx: &mut Context<Self>) {
+        self.adding_server = true;
+        self.add_problem = None;
+        cx.notify();
     }
 
     fn add_server(&mut self, cx: &mut Context<Self>) {
@@ -182,19 +210,17 @@ impl DashboardView {
         self.show_server(&server, cx);
     }
 
-    fn remove_server(&mut self, server: &Server, cx: &mut Context<Self>) {
+    pub fn remove_server(&mut self, server: &Server, cx: &mut Context<Self>) {
         self.store.remove(server);
         self.store.save();
-        self.selected = None;
-        self.deployments = None;
+        self.reset_selection();
         self.load(cx);
     }
 
-    fn sign_out(&mut self, server: &Server, cx: &mut Context<Self>) {
+    pub fn sign_out(&mut self, server: &Server, cx: &mut Context<Self>) {
         self.store.set_key(server, None);
         self.store.save();
-        self.selected = None;
-        self.deployments = None;
+        self.reset_selection();
         self.load(cx);
     }
 
@@ -386,112 +412,6 @@ impl DashboardView {
         self.load(cx);
     }
 
-    // MARK: Header
-
-    fn header(&self, cx: &mut Context<Self>) -> Div {
-        let active = self.active_server(cx);
-        let choices = self.choices(cx);
-        let signed_in = active
-            .as_ref()
-            .is_some_and(|server| self.store.key(server).is_some());
-        let view = cx.entity();
-        let menu_server = active.clone();
-        let menu = Button::new("server-menu")
-            .icon(ph(match &active {
-                Some(server) if server.managed => "desktop",
-                _ => "globe",
-            }))
-            .label(
-                active
-                    .as_ref()
-                    .map_or("Add a server".to_owned(), |s| s.name.clone()),
-            )
-            .outline()
-            .small()
-            .dropdown_menu(move |mut menu, _, _| {
-                for choice in &choices {
-                    let target = choice.clone();
-                    let view = view.clone();
-                    menu = menu.item(
-                        PopupMenuItem::new(choice.name.clone())
-                            .icon(ph(if choice.managed { "desktop" } else { "globe" }))
-                            .checked(Some(choice) == menu_server.as_ref())
-                            .on_click(move |_, _, cx| {
-                                view.update(cx, |this, cx| this.show_server(&target, cx))
-                            }),
-                    );
-                }
-                let add = view.clone();
-                menu = menu.separator().item(
-                    PopupMenuItem::new("Add server")
-                        .icon(ph("plus"))
-                        .on_click(move |_, _, cx| {
-                            add.update(cx, |this, cx| {
-                                this.adding_server = true;
-                                cx.notify();
-                            })
-                        }),
-                );
-                if let Some(server) = menu_server.clone() {
-                    if signed_in {
-                        let view = view.clone();
-                        let server = server.clone();
-                        menu = menu.item(
-                            PopupMenuItem::new(format!("Sign out of {}", server.name))
-                                .icon(ph("sign-in"))
-                                .on_click(move |_, _, cx| {
-                                    view.update(cx, |this, cx| this.sign_out(&server, cx))
-                                }),
-                        );
-                    }
-                    if !server.managed {
-                        let view = view.clone();
-                        menu = menu.item(
-                            PopupMenuItem::new(format!("Remove {}", server.name))
-                                .icon(ph("trash"))
-                                .on_click(move |_, _, cx| {
-                                    view.update(cx, |this, cx| this.remove_server(&server, cx))
-                                }),
-                        );
-                    }
-                }
-                menu
-            });
-        let loading = matches!(self.content, Content::Loading);
-        h_flex()
-            .gap_3()
-            .px_4()
-            .py_3()
-            .items_center()
-            .child(menu)
-            .child(div().flex_1())
-            .children(active.as_ref().map(|server| {
-                let url = server.url.clone();
-                Button::new("open-in-browser")
-                    .icon(ph("arrow-square-out"))
-                    .tooltip("Open in your browser")
-                    .outline()
-                    .small()
-                    .on_click(move |_, _, _| {
-                        let _ = open::that(&url);
-                    })
-            }))
-            .child(
-                Button::new("refresh")
-                    .icon(ph("arrow-clockwise"))
-                    .tooltip("Refresh")
-                    .outline()
-                    .small()
-                    .loading(loading)
-                    .disabled(loading || active.is_none())
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.selected = None;
-                        this.deployments = None;
-                        this.load(cx);
-                    })),
-            )
-    }
-
     // MARK: States
 
     fn centered(&self, content: impl IntoElement, cx: &App) -> Div {
@@ -506,7 +426,7 @@ impl DashboardView {
     }
 
     fn add_server_form(&self, cx: &mut Context<Self>) -> Div {
-        let cancellable = self.has_servers(cx);
+        let cancellable = self.active_server(cx).is_some();
         card(cx)
             .child(heading(
                 "Add a server",
@@ -718,13 +638,32 @@ impl DashboardView {
         let count = self.visible_items(cx).len();
         let empty = matches!(&self.content, Content::Loaded(items) if items.is_empty());
         v_flex()
-            .w(px(300.0))
+            .w(px(260.0))
             .flex_shrink_0()
             .h_full()
-            .bg(cx.theme().sidebar)
             .border_r_1()
-            .border_color(cx.theme().sidebar_border)
-            .child(div().p_3().child(Input::new(&self.search).cleanable(true)))
+            .border_color(cx.theme().border)
+            .child(
+                h_flex()
+                    .gap_2()
+                    .p_3()
+                    .child(
+                        div()
+                            .flex_1()
+                            .child(Input::new(&self.search).cleanable(true)),
+                    )
+                    .child(
+                        Button::new("refresh")
+                            .icon(ph("arrow-clockwise"))
+                            .tooltip("Refresh")
+                            .ghost()
+                            .small()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.reset_selection();
+                                this.load(cx);
+                            })),
+                    ),
+            )
             .child(if empty {
                 div()
                     .p_4()
@@ -959,8 +898,6 @@ impl Render for DashboardView {
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .child(self.header(cx))
-            .child(rule(cx))
             .child(self.body(cx))
     }
 }
