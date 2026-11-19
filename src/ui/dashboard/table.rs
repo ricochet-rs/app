@@ -42,6 +42,7 @@ impl DashboardView {
                     .on_click(cx.listener(|this, _, _, cx| this.load(cx))),
             );
         let header = h_flex()
+            .w_full()
             .h(px(44.0))
             .px_4()
             .gap_4()
@@ -75,6 +76,7 @@ impl DashboardView {
             )
             .flex_1()
             .min_h_0()
+            .w_full()
             .into_any_element()
         };
         v_flex()
@@ -116,6 +118,7 @@ impl DashboardView {
                 let deployed = item.deployment_status.as_deref() == Some("success");
                 h_flex()
                     .id(("row", index))
+                    .w_full()
                     .h(px(ROW_HEIGHT))
                     .px_4()
                     .gap_4()
