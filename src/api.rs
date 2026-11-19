@@ -201,7 +201,7 @@ impl BrowserSignIn {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let port = listener.local_addr()?.port();
         let mut nonce = [0u8; 16];
-        getrandom::fill(&mut nonce).map_err(std::io::Error::other)?;
+        getrandom::fill(&mut nonce).map_err(|error| std::io::Error::other(error.to_string()))?;
         let nonce: String = nonce.iter().map(|byte| format!("{byte:02x}")).collect();
         let path = format!("/callback/{nonce}");
         let callback = format!("http://127.0.0.1:{port}{path}");
