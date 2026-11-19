@@ -4,7 +4,7 @@ use super::components::{
     callout, card, card_title, danger_button, error_alert, heading, prose, rule, segmented,
     selection_mark, setting_row, tab_bar,
 };
-use super::dashboard::{DashboardView, Page};
+use super::dashboard::{DashboardView, InstallInstead, Page};
 use super::icons::ph;
 use super::section::SetupSection;
 use crate::config::section::{Field as _, SettingsSection as _};
@@ -209,6 +209,9 @@ impl SetupView {
             changing_role: false,
             subscriptions: vec![
                 cx.observe(&dashboard, |_, _, cx| cx.notify()),
+                cx.subscribe(&dashboard, |this, _, _: &InstallInstead, cx| {
+                    this.install_instead(cx)
+                }),
                 cx.observe_in(&server, window, |this, server, window, cx| {
                     if this.reload_explorer_when_idle && server.read(cx).activity.is_none() {
                         this.reload_explorer_when_idle = false;

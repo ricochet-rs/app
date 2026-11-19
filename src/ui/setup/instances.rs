@@ -131,8 +131,14 @@ impl SetupView {
             })
     }
 
-    /// Asks where the new instance is: a machine to install on, or a server already running ricochet.
+    /// Asks for the address of a running ricochet, which offers installing one instead.
     fn connect_another(&mut self, cx: &mut Context<Self>) {
+        self.instance_inputs = None;
+        self.add_server(cx);
+    }
+
+    /// Shows where ricochet can be installed: this machine or an SSH host.
+    pub(super) fn install_instead(&mut self, cx: &mut Context<Self>) {
         self.instance_inputs = None;
         self.dashboard
             .update(cx, |dashboard, cx| dashboard.show_managed(cx));

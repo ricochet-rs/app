@@ -26,6 +26,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 const ITEM_HEIGHT: f32 = 52.0;
 
+/// Asks the window to show where ricochet can be installed, instead of connecting by address.
+pub struct InstallInstead;
+
+impl gpui::EventEmitter<InstallInstead> for DashboardView {}
+
 /// An edit to an instance on the Instances page.
 pub enum InstanceChange {
     Name(String),
@@ -645,8 +650,8 @@ impl DashboardView {
         let cancellable = self.active_server(cx).is_some();
         card(cx)
             .child(heading(
-                "Add a server",
-                Some("Show the content on any ricochet server you can sign in to."),
+                "Connect to ricochet",
+                Some("Enter the address you open ricochet at in your browser."),
                 cx,
             ))
             .child(Input::new(&self.url_input))
@@ -659,7 +664,18 @@ impl DashboardView {
             .child(
                 h_flex()
                     .gap_2()
-                    .justify_end()
+                    .child(
+                        Button::new("install-instead")
+                            .label("Install ricochet on a machine instead")
+                            .ghost()
+                            .small()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.adding_server = false;
+                                this.add_problem = None;
+                                cx.emit(InstallInstead);
+                            })),
+                    )
+                    .child(div().flex_1())
                     .when(cancellable, |row| {
                         row.child(
                             Button::new("cancel-add")
@@ -675,8 +691,8 @@ impl DashboardView {
                     })
                     .child(
                         Button::new("add-server")
-                            .icon(ph("plus"))
-                            .label("Add server")
+                            .icon(ph("arrow-right"))
+                            .label("Connect")
                             .primary()
                             .small()
                             .on_click(cx.listener(|this, _, _, cx| this.add_server(cx))),

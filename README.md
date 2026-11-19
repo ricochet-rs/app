@@ -55,7 +55,7 @@ Apps and documents still open in your browser.
 
 Switch instances from the menu at the top of the window.
 It lists this machine, the SSH hosts you connected to, and any other ricochet server you connected to by its address.
-**Connect another instance** installs ricochet on a machine or connects to a running server, and **Manage instances** lets you rename, group and reorder the list.
+**Connect another instance** connects to a running ricochet by its address, or installs ricochet on a machine instead, and **Manage instances** lets you rename, group and reorder the list.
 A server you connected to by address shows only its content, since the app doesn't manage it.
 Select **Sign in with your browser** to sign in the same way the ricochet CLI does, or paste an API key.
 Keys from the browser sign-in last eight hours.
