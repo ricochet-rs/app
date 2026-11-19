@@ -4,7 +4,7 @@ use super::components::{
     callout, card, card_title, danger_button, error_alert, heading, prose, rule, segmented,
     selection_mark, setting_row, tab_bar,
 };
-use super::dashboard::DashboardView;
+use super::dashboard::{DashboardView, Page};
 use super::icons::ph;
 use super::section::SetupSection;
 use crate::config::section::{Field as _, SettingsSection as _};
@@ -503,6 +503,12 @@ impl SetupView {
             self.stop_following_logs();
         }
         cx.notify();
+    }
+
+    fn show_page(&mut self, page: Page, cx: &mut Context<Self>) {
+        self.dashboard
+            .update(cx, |dashboard, cx| dashboard.show_page(page, cx));
+        self.show_content(cx);
     }
 
     fn show_content(&mut self, cx: &mut Context<Self>) {
@@ -1041,29 +1047,34 @@ impl SetupView {
                     self.sidebar_item(section, label, cx)
                 }))
         });
-        let content = self
-            .sidebar_row(
-                "Content",
-                "squares-four",
-                "Content",
-                self.showing_content,
-                false,
-                cx,
-            )
-            .on_click(cx.listener(|this, _, _, cx| this.show_content(cx)));
+        let shown_page = self.dashboard.read(cx).page();
+        let pages: Vec<_> = Page::ALL
+            .into_iter()
+            .map(|page| {
+                self.sidebar_row(
+                    page.id(),
+                    page.icon(),
+                    page.title(),
+                    self.showing_content && shown_page == page,
+                    false,
+                    cx,
+                )
+                .on_click(cx.listener(move |this, _, _, cx| this.show_page(page, cx)))
+            })
+            .collect();
         let sidebar = v_flex()
             .w(px(220.0))
             .flex_shrink_0()
             .h_full()
             .px_3()
-            .pt_3()
             .pb_3()
             .gap_0p5()
             .bg(cx.theme().sidebar)
             .text_color(cx.theme().sidebar_foreground)
             .border_r_1()
             .border_color(cx.theme().sidebar_border)
-            .child(content);
+            .child(group_label("Content"))
+            .children(pages);
         if self.dashboard.read(cx).added_server().is_some() {
             return sidebar;
         }

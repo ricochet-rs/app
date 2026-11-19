@@ -1,8 +1,13 @@
 //! The content on a ricochet server, shown in the app instead of a browser.
 
-use super::components::{card, card_title, error_alert, heading, prose, rule};
+use super::components::{card, error_alert, heading, prose, rule};
 use super::icons::ph;
-use crate::api::{self, ApiError, BrowserSignIn, Client, Deployment, Item};
+use crate::api::{self, ApiError, BrowserSignIn, Client, Credential, Deployment, Item};
+use item::Tab;
+
+mod item;
+mod log;
+mod pages;
 use crate::controller::{DEFAULT_PORT, ServerController, ServerStatus};
 use crate::servers::{Server, Servers};
 use gpui::prelude::*;
@@ -32,10 +37,73 @@ enum Content {
     Failed(String),
 }
 
-enum Deployments {
+/// Something the dashboard reads from the server.
+enum Loadable<T> {
+    Idle,
     Loading,
-    Loaded(Vec<Deployment>),
+    Loaded(T),
     Failed(String),
+}
+
+impl<T> Loadable<T> {
+    fn from_result(result: api::Result<T>) -> Self {
+        match result {
+            Ok(value) => Self::Loaded(value),
+            Err(error) => Self::Failed(error.to_string()),
+        }
+    }
+}
+
+/// A page of the Content section in the sidebar.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Page {
+    Apps,
+    Tasks,
+    Deployments,
+    Deploy,
+    Credentials,
+}
+
+impl Page {
+    pub const ALL: [Self; 5] = [
+        Self::Apps,
+        Self::Tasks,
+        Self::Deployments,
+        Self::Deploy,
+        Self::Credentials,
+    ];
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Apps => "Apps",
+            Self::Tasks => "Tasks",
+            Self::Deployments => "Deployments",
+            Self::Deploy => "Deploy",
+            Self::Credentials => "Credentials",
+        }
+    }
+
+    /// The sidebar row's element id, apart from the settings pane of the same name.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Apps => "page-apps",
+            Self::Tasks => "page-tasks",
+            Self::Deployments => "page-deployments",
+            Self::Deploy => "page-deploy",
+            Self::Credentials => "page-credentials",
+        }
+    }
+
+    /// The Phosphor icon beside the page in the sidebar.
+    pub fn icon(self) -> &'static str {
+        match self {
+            Self::Apps => "app-window",
+            Self::Tasks => "timer",
+            Self::Deployments => "clock-counter-clockwise",
+            Self::Deploy => "rocket-launch",
+            Self::Credentials => "key",
+        }
+    }
 }
 
 pub struct DashboardView {
@@ -44,8 +112,25 @@ pub struct DashboardView {
     content: Content,
     /// Counts loads, so an answer from a server you already left is dropped.
     load_generation: u64,
+    page: Page,
     selected: Option<String>,
-    deployments: Option<Deployments>,
+    /// Counts the items opened, so an answer about one you already left is dropped.
+    item_generation: u64,
+    tab: Tab,
+    deployments: Loadable<Vec<Deployment>>,
+    runtime: Loadable<item::Runtime>,
+    env_vars: Loadable<Vec<String>>,
+    settings: Loadable<item::Settings>,
+    access: String,
+    log: log::LogView,
+    /// Values for text fields that wait for a window to set them.
+    pending_inputs: Vec<(Entity<InputState>, String)>,
+    all_deployments: Loadable<Vec<(String, Deployment)>>,
+    credentials: Loadable<Vec<Credential>>,
+    deploy_credential: Option<String>,
+    deploy_folder: Option<std::path::PathBuf>,
+    deploying: bool,
+    inputs: item::Inputs,
     search: Entity<InputState>,
     url_input: Entity<InputState>,
     key_input: Entity<InputState>,
@@ -54,7 +139,8 @@ pub struct DashboardView {
     /// Stops the browser sign-in while it waits.
     signing_in: Option<Arc<AtomicBool>>,
     sign_in_problem: Option<String>,
-    running: bool,
+    /// The action running on the open item, such as "Saving".
+    busy: Option<&'static str>,
     notice: Option<String>,
     /// The managed server and its status at the last load, to load again when either changes.
     seen_managed: (Option<Server>, ServerStatus),
@@ -107,8 +193,23 @@ impl DashboardView {
             store: Servers::load(),
             content: Content::NoServer,
             load_generation: 0,
+            page: Page::Apps,
             selected: None,
-            deployments: None,
+            item_generation: 0,
+            tab: Tab::Overview,
+            deployments: Loadable::Idle,
+            runtime: Loadable::Idle,
+            env_vars: Loadable::Idle,
+            settings: Loadable::Idle,
+            access: String::new(),
+            log: log::LogView::default(),
+            pending_inputs: Vec::new(),
+            all_deployments: Loadable::Idle,
+            credentials: Loadable::Idle,
+            deploy_credential: None,
+            deploy_folder: None,
+            deploying: false,
+            inputs: item::Inputs::new(window, cx),
             search,
             url_input,
             key_input,
@@ -116,7 +217,7 @@ impl DashboardView {
             add_problem: None,
             signing_in: None,
             sign_in_problem: None,
-            running: false,
+            busy: None,
             notice: None,
             seen_managed: (None, ServerStatus::Stopped),
             _subscriptions: subscriptions,
@@ -168,10 +269,28 @@ impl DashboardView {
     }
 
     fn reset_selection(&mut self) {
-        self.selected = None;
-        self.deployments = None;
+        self.close_item();
         self.adding_server = false;
         self.notice = None;
+    }
+
+    /// Forgets what was read about the open item, and stops following its log.
+    fn reset_item_state(&mut self) {
+        self.deployments = Loadable::Idle;
+        self.runtime = Loadable::Idle;
+        self.env_vars = Loadable::Idle;
+        self.settings = Loadable::Idle;
+        self.log.stop();
+        self.log = log::LogView::default();
+        self.busy = None;
+        self.notice = None;
+    }
+
+    /// Sets text fields that waited for a window.
+    fn apply_pending_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for (input, value) in std::mem::take(&mut self.pending_inputs) {
+            input.update(cx, |input, cx| input.set_value(value, window, cx));
+        }
     }
 
     pub fn show_server(&mut self, server: &Server, cx: &mut Context<Self>) {
@@ -280,7 +399,16 @@ impl DashboardView {
                 this.content = match result {
                     Ok(mut items) => {
                         items.sort_by_key(|item| item.name.to_lowercase());
-                        Content::Loaded(items)
+                        let open = this
+                            .selected
+                            .clone()
+                            .filter(|id| items.iter().any(|item| &item.id == id));
+                        this.content = Content::Loaded(items);
+                        match open {
+                            Some(id) => this.open_item(id, this.tab, cx),
+                            None => this.close_item(),
+                        }
+                        return cx.notify();
                     }
                     Err(ApiError::SignedOut) => {
                         this.store.set_key(&server, None);
@@ -296,58 +424,99 @@ impl DashboardView {
         .detach();
     }
 
-    fn select_item(&mut self, id: String, cx: &mut Context<Self>) {
-        if self.selected.as_deref() == Some(&id) {
-            return;
-        }
-        self.selected = Some(id.clone());
-        self.notice = None;
-        self.deployments = Some(Deployments::Loading);
-        cx.notify();
+    /// Runs `work` with a client for the server shown, then hands its answer to `done`,
+    /// unless you moved to another server or item in the meantime.
+    fn fetch<T: Send + 'static>(
+        &mut self,
+        cx: &mut Context<Self>,
+        work: impl FnOnce(&Client) -> api::Result<T> + Send + 'static,
+        done: impl FnOnce(&mut Self, api::Result<T>, &mut Context<Self>) + 'static,
+    ) {
         let Some(server) = self.active_server(cx) else {
             return;
         };
         let Some(client) = self.client(&server) else {
             return;
         };
-        let task = self.reach(&server, cx, move || client.deployments(&id));
+        let generation = (self.load_generation, self.item_generation);
+        let task = self.reach(&server, cx, move || work(&client));
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let _ = this.update(cx, |this, cx| {
-                this.deployments = Some(match result {
-                    Ok(deployments) => Deployments::Loaded(deployments),
-                    Err(error) => Deployments::Failed(error.to_string()),
-                });
+                if (this.load_generation, this.item_generation) != generation {
+                    return;
+                }
+                if matches!(result, Err(ApiError::SignedOut)) {
+                    this.store.set_key(&server, None);
+                    this.store.save();
+                    this.sign_in_problem = Some(ApiError::SignedOut.to_string());
+                    this.content = Content::SignedOut;
+                } else {
+                    done(this, result, cx);
+                }
                 cx.notify();
             });
         })
         .detach();
     }
 
-    fn run_task(&mut self, item: Item, cx: &mut Context<Self>) {
-        let Some(server) = self.active_server(cx) else {
-            return;
-        };
-        let Some(client) = self.client(&server) else {
-            return;
-        };
-        self.running = true;
-        self.notice = None;
+    // MARK: Pages
+
+    pub fn page(&self) -> Page {
+        self.page
+    }
+
+    pub fn show_page(&mut self, page: Page, cx: &mut Context<Self>) {
+        self.page = page;
+        self.adding_server = false;
+        match page {
+            Page::Apps | Page::Tasks => {
+                let keep = self
+                    .selected_item()
+                    .is_some_and(|item| item.is_task() == (page == Page::Tasks));
+                if !keep {
+                    self.close_item();
+                }
+            }
+            Page::Deployments => self.load_all_deployments(cx),
+            Page::Deploy | Page::Credentials => self.load_credentials(cx),
+        }
         cx.notify();
-        let id = item.id.clone();
-        let task = self.reach(&server, cx, move || client.run(&id));
-        cx.spawn(async move |this, cx| {
-            let result = task.await;
-            let _ = this.update(cx, |this, cx| {
-                this.running = false;
-                this.notice = Some(match result {
-                    Ok(()) => format!("Started a run of {}.", item.name),
-                    Err(error) => error.to_string(),
-                });
-                cx.notify();
-            });
-        })
-        .detach();
+    }
+
+    fn items(&self) -> &[Item] {
+        match &self.content {
+            Content::Loaded(items) => items,
+            _ => &[],
+        }
+    }
+
+    fn selected_item(&self) -> Option<Item> {
+        let id = self.selected.as_ref()?;
+        self.items().iter().find(|item| &item.id == id).cloned()
+    }
+
+    fn close_item(&mut self) {
+        self.selected = None;
+        self.item_generation += 1;
+        self.reset_item_state();
+    }
+
+    /// Opens an item on its own page, at `tab`.
+    fn open_item(&mut self, id: String, tab: Tab, cx: &mut Context<Self>) {
+        if let Some(item) = self.items().iter().find(|item| item.id == id) {
+            self.page = if item.is_task() {
+                Page::Tasks
+            } else {
+                Page::Apps
+            };
+        }
+        if self.selected.as_deref() != Some(&id) {
+            self.selected = Some(id);
+            self.item_generation += 1;
+            self.reset_item_state();
+        }
+        self.show_tab(tab, cx);
     }
 
     // MARK: Signing in
@@ -562,12 +731,11 @@ impl DashboardView {
     // MARK: Content
 
     fn visible_items(&self, cx: &App) -> Vec<Item> {
-        let Content::Loaded(items) = &self.content else {
-            return Vec::new();
-        };
         let query = self.search.read(cx).value().to_lowercase();
-        items
+        let tasks = self.page == Page::Tasks;
+        self.items()
             .iter()
+            .filter(|item| item.is_task() == tasks)
             .filter(|item| {
                 query.is_empty()
                     || item.name.to_lowercase().contains(&query)
@@ -593,7 +761,7 @@ impl DashboardView {
             .take(range.len())
             .map(|(index, item)| {
                 let selected = self.selected.as_deref() == Some(&item.id);
-                let color = status_color(&item.deployment_status, cx);
+                let color = status_color(item.deployment_status.as_deref().unwrap_or(""), cx);
                 let id = item.id.clone();
                 h_flex()
                     .id(("item", index))
@@ -628,7 +796,10 @@ impl DashboardView {
                             ))),
                     )
                     .child(div().size(px(6.0)).rounded_full().bg(color))
-                    .on_click(cx.listener(move |this, _, _, cx| this.select_item(id.clone(), cx)))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        let tab = this.tab;
+                        this.open_item(id.clone(), tab, cx)
+                    }))
                     .into_any_element()
             })
             .collect()
@@ -636,7 +807,10 @@ impl DashboardView {
 
     fn content_list(&self, cx: &mut Context<Self>) -> Div {
         let count = self.visible_items(cx).len();
-        let empty = matches!(&self.content, Content::Loaded(items) if items.is_empty());
+        let empty = self
+            .items()
+            .iter()
+            .all(|item| item.is_task() != (self.page == Page::Tasks));
         v_flex()
             .w(px(260.0))
             .flex_shrink_0()
@@ -658,10 +832,7 @@ impl DashboardView {
                             .tooltip("Refresh")
                             .ghost()
                             .small()
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.reset_selection();
-                                this.load(cx);
-                            })),
+                            .on_click(cx.listener(|this, _, _, cx| this.load(cx))),
                     ),
             )
             .child(if empty {
@@ -669,7 +840,11 @@ impl DashboardView {
                     .p_4()
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
-                    .child(prose("Nothing is deployed to this server yet."))
+                    .child(prose(if self.page == Page::Tasks {
+                        "No tasks are deployed to this server yet."
+                    } else {
+                        "No apps are deployed to this server yet."
+                    }))
                     .into_any_element()
             } else {
                 uniform_list(
@@ -683,178 +858,7 @@ impl DashboardView {
             })
     }
 
-    fn item_detail(&self, cx: &mut Context<Self>) -> AnyElement {
-        let Content::Loaded(items) = &self.content else {
-            return div().into_any_element();
-        };
-        let Some(item) = self
-            .selected
-            .as_ref()
-            .and_then(|id| items.iter().find(|item| &item.id == id))
-            .cloned()
-        else {
-            return v_flex()
-                .flex_1()
-                .items_center()
-                .justify_center()
-                .text_sm()
-                .text_color(cx.theme().muted_foreground)
-                .child("Choose an item to see its details and deployments.")
-                .into_any_element();
-        };
-        let server_url = self
-            .active_server(cx)
-            .map(|server| server.url)
-            .unwrap_or_default();
-        let open_url = format!("{server_url}/app/{}/", item.id);
-        let facts = [
-            ("Type", item.kind().to_owned()),
-            ("Language", item.language_name().to_owned()),
-            ("Access", capitalized(&item.access_type)),
-            ("Updated", when(item.modified_at)),
-        ];
-        let run_item = item.clone();
-        div()
-            .id("item-detail")
-            .flex_1()
-            .min_w_0()
-            .h_full()
-            .overflow_y_scroll()
-            .child(
-                v_flex()
-                    .gap_6()
-                    .p_6()
-                    .child(heading(&item.name, item.summary.as_deref(), cx))
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .child(
-                                Button::new("open-item")
-                                    .icon(ph("arrow-square-out"))
-                                    .label("Open")
-                                    .primary()
-                                    .small()
-                                    .on_click(move |_, _, _| {
-                                        let _ = open::that(&open_url);
-                                    }),
-                            )
-                            .when(item.is_task(), |row| {
-                                row.child(
-                                    Button::new("run-item")
-                                        .icon(ph("play"))
-                                        .label("Run now")
-                                        .outline()
-                                        .small()
-                                        .loading(self.running)
-                                        .disabled(self.running)
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.run_task(run_item.clone(), cx)
-                                        })),
-                                )
-                            })
-                            .children(self.notice.clone().map(|notice| {
-                                div()
-                                    .text_sm()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(notice)
-                            })),
-                    )
-                    .child(card(cx).child(h_flex().gap_6().flex_wrap().children(
-                        facts.into_iter().map(|(label, value)| {
-                            v_flex()
-                                .gap_0p5()
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child(label),
-                                )
-                                .child(div().text_sm().child(value))
-                        }),
-                    )))
-                    .when_some(item.tags.clone().filter(|t| !t.is_empty()), |pane, tags| {
-                        pane.child(
-                            h_flex()
-                                .gap_1p5()
-                                .flex_wrap()
-                                .children(tags.into_iter().map(|tag| {
-                                    div()
-                                        .px_2()
-                                        .py_0p5()
-                                        .text_xs()
-                                        .border_1()
-                                        .border_color(cx.theme().border)
-                                        .child(tag)
-                                })),
-                        )
-                    })
-                    .child(self.deployment_history(cx)),
-            )
-            .into_any_element()
-    }
-
-    fn deployment_history(&self, cx: &App) -> Div {
-        let body = match &self.deployments {
-            None | Some(Deployments::Loading) => {
-                h_flex().child(Spinner::new().small()).into_any_element()
-            }
-            Some(Deployments::Failed(message)) => div()
-                .text_sm()
-                .text_color(cx.theme().danger)
-                .child(prose(message.clone()))
-                .into_any_element(),
-            Some(Deployments::Loaded(deployments)) if deployments.is_empty() => div()
-                .text_sm()
-                .text_color(cx.theme().muted_foreground)
-                .child("No deployments yet.")
-                .into_any_element(),
-            Some(Deployments::Loaded(deployments)) => v_flex()
-                .children(deployments.iter().take(20).enumerate().map(|(index, d)| {
-                    let version = [
-                        d.matched_ver.clone(),
-                        d.git_hash
-                            .as_ref()
-                            .map(|hash| hash.chars().take(7).collect()),
-                    ]
-                    .into_iter()
-                    .flatten()
-                    .collect::<Vec<String>>()
-                    .join(" · ");
-                    h_flex()
-                        .gap_3()
-                        .py_2()
-                        .items_center()
-                        .when(index > 0, |row| {
-                            row.border_t_1().border_color(cx.theme().border)
-                        })
-                        .child(
-                            div()
-                                .size(px(6.0))
-                                .rounded_full()
-                                .bg(status_color(&d.status, cx)),
-                        )
-                        .child(div().w(px(110.0)).text_sm().child(capitalized(&d.status)))
-                        .child(
-                            div()
-                                .flex_1()
-                                .text_sm()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(when(d.deployed_at)),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .font_family(cx.theme().mono_font_family.clone())
-                                .text_color(cx.theme().muted_foreground)
-                                .child(version),
-                        )
-                }))
-                .into_any_element(),
-        };
-        card(cx).child(card_title("Deployments", cx)).child(body)
-    }
-
-    fn body(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         if self.adding_server || matches!(self.content, Content::NoServer) {
             return self
                 .centered(self.add_server_form(cx), cx)
@@ -882,23 +886,29 @@ impl DashboardView {
                 );
                 self.centered(alert, cx).into_any_element()
             }
-            Content::Loaded(_) => h_flex()
-                .flex_1()
-                .min_h_0()
-                .child(self.content_list(cx))
-                .child(self.item_detail(cx))
-                .into_any_element(),
+            Content::Loaded(_) => match self.page {
+                Page::Apps | Page::Tasks => h_flex()
+                    .flex_1()
+                    .min_h_0()
+                    .child(self.content_list(cx))
+                    .child(self.item_detail(window, cx))
+                    .into_any_element(),
+                Page::Deployments => self.deployments_page(cx),
+                Page::Deploy => self.deploy_page(cx),
+                Page::Credentials => self.credentials_page(cx),
+            },
         }
     }
 }
 
 impl Render for DashboardView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.apply_pending_inputs(window, cx);
         v_flex()
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .child(self.body(cx))
+            .child(self.body(window, cx))
     }
 }
 
@@ -912,21 +922,12 @@ fn status_color(status: &str, cx: &App) -> Hsla {
 }
 
 fn kind_icon(item: &Item) -> &'static str {
-    match item.kind() {
+    match item.kind().as_str() {
         "API" => "code-simple",
         "Script" => "timer",
         kind if kind.ends_with("document") => "book-open",
         _ => "app-window",
     }
-}
-
-fn capitalized(text: &str) -> String {
-    let text = text.replace('_', " ");
-    let mut chars = text.chars();
-    chars
-        .next()
-        .map(|first| first.to_uppercase().chain(chars).collect())
-        .unwrap_or_default()
 }
 
 /// A Unix timestamp in this computer's time zone, such as "Nov 19, 2026 at 14:05".
@@ -946,8 +947,8 @@ mod tests {
 
     #[test]
     fn statuses_read_as_words() {
-        assert_eq!(capitalized("success"), "Success");
-        assert_eq!(capitalized("dependency_mismatch"), "Dependency mismatch");
-        assert_eq!(capitalized(""), "");
+        assert_eq!(api::humanize("success"), "Success");
+        assert_eq!(api::humanize("dependency_mismatch"), "Dependency mismatch");
+        assert_eq!(api::humanize(""), "");
     }
 }
