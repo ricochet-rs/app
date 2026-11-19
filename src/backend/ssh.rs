@@ -456,6 +456,10 @@ impl Backend for SshBackend {
         }
     }
 
+    fn reach_dashboard(&self, port: u16) -> Result<()> {
+        self.ensure_tunnel(port)
+    }
+
     fn open_dashboard(&self, port: u16) -> Result<()> {
         self.ensure_tunnel(port)?;
         let _ = open::that(format!("http://localhost:{port}"));

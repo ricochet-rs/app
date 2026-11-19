@@ -83,6 +83,11 @@ enum People {
     Loaded(Vec<Person>),
 }
 
+/// Asks the window to show the content of the server being managed.
+pub struct OpenDashboard;
+
+impl gpui::EventEmitter<OpenDashboard> for SetupView {}
+
 pub struct SetupView {
     server: Entity<ServerController>,
     /// The count of config reads from the computer being managed that the fields already show.
@@ -715,12 +720,12 @@ impl SetupView {
             .when(configured, |row| {
                 row.child(
                     Button::new("open")
-                        .icon(ph("arrow-square-out"))
+                        .icon(ph("squares-four"))
                         .label("Open")
                         .primary()
                         .small()
                         .disabled(!running || busy)
-                        .on_click(act(|server, cx| server.open_dashboard(cx))),
+                        .on_click(cx.listener(|_, _, _, cx| cx.emit(OpenDashboard))),
                 )
                 .child(if stopped {
                     Button::new("start")

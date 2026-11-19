@@ -1,5 +1,6 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod api;
 mod archive;
 mod assets;
 mod backend;
@@ -12,6 +13,7 @@ mod paths;
 mod person;
 mod ports;
 mod release;
+mod servers;
 mod service;
 mod shell;
 mod ui;
@@ -22,7 +24,7 @@ use gpui::{
     actions, px, size,
 };
 use gpui_component::Root;
-use ui::setup::SetupView;
+use ui::workspace::Workspace;
 
 actions!(ricochet, [Quit]);
 
@@ -60,7 +62,7 @@ fn main() {
                     .observe_window_appearance(|window, cx| ui::theme::apply(Some(window), cx))
                     .detach();
                 let server = cx.new(ServerController::new);
-                let view = cx.new(|cx| SetupView::new(server, window, cx));
+                let view = cx.new(|cx| Workspace::new(server, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             })
             .expect("ricochet could not open its window");

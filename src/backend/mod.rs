@@ -104,6 +104,10 @@ pub trait Backend: Send + Sync {
     }
     /// Opens ricochet in a browser on this computer.
     fn open_dashboard(&self, port: u16) -> Result<()>;
+    /// Makes ricochet answer on `localhost:port` of this computer, so the app can call its API.
+    fn reach_dashboard(&self, _port: u16) -> Result<()> {
+        Ok(())
+    }
     /// Keeps ricochet running after you log out of that computer.
     fn keep_running_after_logout(&self) -> Result<()> {
         Ok(())

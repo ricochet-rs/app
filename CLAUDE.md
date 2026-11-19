@@ -18,6 +18,7 @@ If authentication, synchronization, HEAD validation, or a required read fails, s
 The app is a simple way to install ricochet's Community Edition for local development, and to install and configure ricochet on remote Linux hosts over SSH.
 It builds for Apple Silicon macOS, x86_64 Linux and x86_64 Windows.
 Never write a `[backend]` section, because content runs as processes on the machine and Kubernetes and containers are out of scope.
+The **Content** tab in `src/ui/dashboard.rs` shows a server's content natively in GPUI through ricochet's REST API, for the managed server and for any server added by address.
 Offer OpenID Connect and Entra only: ricochet refuses a SAML assertion consumer URL that is not `https`, and the server here serves `http://localhost`.
 
 ## App
@@ -61,6 +62,14 @@ Never let the profile write `~/Library/LaunchAgents` or `~/.local/bin`, because 
 Pass folders to the profile as `-D` parameters rather than writing them into its text, so a path never needs SBPL escaping.
 Deny `file-read-data` under `/Users`, never `file-read*`, because R and Python resolve a path by reading the metadata of every parent folder.
 Set `HOME` inside ricochet's folder, and point `JULIAUP_DEPOT_PATH` and `UV_PYTHON_INSTALL_DIR` at the real ones, because the server finds juliaup's Julia installs and uv's Pythons through them.
+
+## Content
+
+Call ricochet's REST API only through `src/api.rs`, with blocking `ureq` calls on GPUI's background executor, because the app has no async HTTP runtime.
+Sign in through `/oauth/authorize` with a loopback `redirect_uri`, the flow the CLI uses, because ricochet mints an API key only for a loopback callback.
+Write `servers.json` readable only by its owner, because it holds API keys.
+Open a managed SSH server's tunnel through `Backend::reach_dashboard` before every API call, because the API answers on `localhost` only while the tunnel is up.
+Open apps and documents in the browser, because what ricochet serves is web content.
 
 ## Uninstall
 

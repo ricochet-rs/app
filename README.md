@@ -42,6 +42,17 @@ Every host from your SSH config shows up in the app, and you can add one with `u
 
 Each SSH host is expected to be a Linux machine you can reach with key-based SSH access.
 
+## See your content
+
+The **Content** tab shows what is deployed to a ricochet server, right in the app.
+It lists every item you can access, with its type, language and deployment history, and lets you run a task now.
+Apps and documents still open in your browser.
+
+Switch servers from the menu at the top left.
+The server this app manages is always there, and **Add server** adds any other ricochet server by its address.
+Select **Sign in with your browser** to sign in the same way the ricochet CLI does, or paste an API key.
+Keys from the browser sign-in last eight hours.
+
 ## Bring your own languages
 
 The app doesn't install R, Julia, or Python.
