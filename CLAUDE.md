@@ -67,6 +67,7 @@ Set `HOME` inside ricochet's folder, and point `JULIAUP_DEPOT_PATH` and `UV_PYTH
 
 Call ricochet's REST API only through `src/api.rs`, with blocking `ureq` calls on GPUI's background executor, because the app has no async HTTP runtime.
 Sign in through `/oauth/authorize` with a loopback `redirect_uri`, the flow the CLI uses, because ricochet mints an API key only for a loopback callback.
+Put a random nonce in the callback path and use `127.0.0.1` in it, because ricochet echoes no `state`, and any page could otherwise hand the app its own key.
 Write `servers.json` readable only by its owner, because it holds API keys.
 Open a managed SSH server's tunnel through `Backend::reach_dashboard` before every API call, because the API answers on `localhost` only while the tunnel is up.
 Open apps and documents in the browser, because what ricochet serves is web content.

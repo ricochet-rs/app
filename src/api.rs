@@ -185,9 +185,12 @@ pub fn normalize_url(text: &str) -> Option<String> {
 /// A browser sign-in waiting for ricochet to send an API key back to this computer.
 ///
 /// It is ricochet's loopback flow for the CLI: `/oauth/authorize` signs you in,
-/// creates a key, and redirects to `http://localhost:{port}/callback?api_key=…`.
+/// creates a key, and redirects to `http://127.0.0.1:{port}/callback/{nonce}?api_key=…`.
+/// ricochet passes no `state` back, so the random nonce in the path is what ties the callback to this sign-in.
 pub struct BrowserSignIn {
     listener: TcpListener,
+    /// The callback path, which only this sign-in and the browser it opens know.
+    path: String,
     /// The page to open in the browser.
     pub url: String,
     cancelled: Arc<AtomicBool>,
@@ -197,7 +200,11 @@ impl BrowserSignIn {
     pub fn start(base: &str) -> std::io::Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let port = listener.local_addr()?.port();
-        let callback = format!("http://localhost:{port}/callback");
+        let mut nonce = [0u8; 16];
+        getrandom::fill(&mut nonce).map_err(std::io::Error::other)?;
+        let nonce: String = nonce.iter().map(|byte| format!("{byte:02x}")).collect();
+        let path = format!("/callback/{nonce}");
+        let callback = format!("http://127.0.0.1:{port}{path}");
         let url = format!(
             "{}/oauth/authorize?redirect_uri={}",
             base.trim_end_matches('/'),
@@ -205,6 +212,7 @@ impl BrowserSignIn {
         );
         Ok(Self {
             listener,
+            path,
             url,
             cancelled: Arc::default(),
         })
@@ -227,7 +235,7 @@ impl BrowserSignIn {
             }
             match self.listener.accept() {
                 Ok((stream, _)) => {
-                    if let Some(answer) = answer_callback(stream) {
+                    if let Some(answer) = answer_callback(stream, &self.path) {
                         return answer;
                     }
                 }
@@ -244,14 +252,14 @@ impl BrowserSignIn {
 }
 
 /// Reads one request, answers it, and returns the key or error it carried if it was the callback.
-fn answer_callback(mut stream: TcpStream) -> Option<Result<String>> {
+fn answer_callback(mut stream: TcpStream, callback: &str) -> Option<Result<String>> {
     let _ = stream.set_nonblocking(false);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let mut line = String::new();
     BufReader::new(&stream).read_line(&mut line).ok()?;
     let target = line.split_whitespace().nth(1)?;
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    if path != "/callback" {
+    if path != callback {
         let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
         return None;
     }
@@ -357,18 +365,20 @@ mod tests {
     fn the_callback_hands_back_the_key() {
         let sign_in = BrowserSignIn::start("http://localhost:6188/").unwrap();
         let port = sign_in.listener.local_addr().unwrap().port();
-        assert!(sign_in.url.starts_with(
-            "http://localhost:6188/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A"
-        ));
+        assert!(sign_in.url.starts_with(&format!(
+            "http://localhost:6188/oauth/authorize?redirect_uri=http%3A%2F%2F127.0.0.1%3A{port}%2Fcallback%2F"
+        )));
+        let request = format!("GET {}?api_key=rico_abc HTTP/1.1\r\n\r\n", sign_in.path);
         let browser = std::thread::spawn(move || {
-            let mut stray = TcpStream::connect(("127.0.0.1", port)).unwrap();
-            stray
-                .write_all(b"GET /favicon.ico HTTP/1.1\r\n\r\n")
-                .unwrap();
+            for forged in [
+                "GET /favicon.ico HTTP/1.1\r\n\r\n",
+                "GET /callback?api_key=rico_forged HTTP/1.1\r\n\r\n",
+            ] {
+                let mut stray = TcpStream::connect(("127.0.0.1", port)).unwrap();
+                stray.write_all(forged.as_bytes()).unwrap();
+            }
             let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
-            stream
-                .write_all(b"GET /callback?api_key=rico_abc HTTP/1.1\r\n\r\n")
-                .unwrap();
+            stream.write_all(request.as_bytes()).unwrap();
         });
         assert_eq!(sign_in.wait(), Ok("rico_abc".to_owned()));
         browser.join().unwrap();
