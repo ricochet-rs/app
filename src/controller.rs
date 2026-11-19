@@ -116,6 +116,18 @@ impl ServerController {
         self.backend.clone()
     }
 
+    /// The computers you connected to: this one and the SSH hosts you added.
+    pub fn connected(&self) -> Vec<Connection> {
+        self.store.connected()
+    }
+
+    /// Forgets an SSH host you added; the one being managed stays until you switch away.
+    pub fn forget(&mut self, host: &str, cx: &mut Context<Self>) {
+        self.store.forget(host);
+        self.store.save();
+        cx.notify();
+    }
+
     /// Every computer to offer: this one, hosts you saved, and hosts from your SSH config.
     pub fn choices(&self) -> Vec<Connection> {
         self.store.choices(&self.discovered)

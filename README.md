@@ -53,9 +53,10 @@ The **Content** pages at the top of the sidebar show what is deployed to a ricoc
 
 Apps and documents still open in your browser.
 
-Switch servers from the menu at the top of the window.
-It lists this machine and your SSH hosts, which the app installs and manages, and any other ricochet server you add with **Add server**.
-A server you added shows only its content, since the app doesn't manage it.
+Switch instances from the menu at the top of the window.
+It lists this machine, the SSH hosts you connected to, and any other ricochet server you connected to by its address.
+**Connect another instance** installs ricochet on a machine or connects to a running server, and **Manage instances** lets you rename, group and reorder the list.
+A server you connected to by address shows only its content, since the app doesn't manage it.
 Select **Sign in with your browser** to sign in the same way the ricochet CLI does, or paste an API key.
 Keys from the browser sign-in last eight hours.
 

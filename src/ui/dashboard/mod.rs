@@ -8,8 +8,9 @@ use item::Tab;
 mod item;
 mod log;
 mod pages;
+use crate::connections::Connection;
 use crate::controller::{DEFAULT_PORT, ServerController, ServerStatus};
-use crate::servers::{Server, Servers};
+use crate::servers::{Instance, Placement, Server, Servers};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Context, Div, Entity, FontWeight, Hsla, Subscription, Window, div, px,
@@ -24,6 +25,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 const ITEM_HEIGHT: f32 = 52.0;
+
+/// An edit to an instance on the Instances page.
+pub enum InstanceChange {
+    Name(String),
+    Group(String),
+    Move(isize),
+}
 
 /// What the dashboard knows about the server it shows.
 enum Content {
@@ -300,6 +308,46 @@ impl DashboardView {
         self.load(cx);
     }
 
+    /// Every instance, in the order and groups you gave them, given the machines you connected to.
+    pub fn instances(&self, machines: Vec<Connection>) -> Vec<(Instance, Placement)> {
+        let instances = machines
+            .into_iter()
+            .map(Instance::Machine)
+            .chain(self.added_servers().into_iter().map(Instance::Added))
+            .collect();
+        self.store.arrange(instances)
+    }
+
+    /// Renames, regroups or moves an instance among `arranged`.
+    pub fn arrange_instance(
+        &mut self,
+        arranged: &[(Instance, Placement)],
+        id: &str,
+        change: InstanceChange,
+        cx: &mut Context<Self>,
+    ) {
+        let blank = |text: String| {
+            let text = text.trim().to_owned();
+            (!text.is_empty()).then_some(text)
+        };
+        match change {
+            InstanceChange::Name(name) => self.store.place(arranged, id, |p| p.name = blank(name)),
+            InstanceChange::Group(group) => {
+                self.store.place(arranged, id, |p| p.group = blank(group))
+            }
+            InstanceChange::Move(offset) => self.store.shift(arranged, id, offset),
+        }
+        self.store.save();
+        cx.notify();
+    }
+
+    /// Forgets the name, group and place of a machine you removed.
+    pub fn forget_placement(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.store.forget_placement(id);
+        self.store.save();
+        cx.notify();
+    }
+
     /// Shows the content of the server this app manages.
     pub fn show_managed(&mut self, cx: &mut Context<Self>) {
         self.store.active = None;
@@ -397,8 +445,7 @@ impl DashboardView {
                     return;
                 }
                 this.content = match result {
-                    Ok(mut items) => {
-                        items.sort_by_key(|item| item.name.to_lowercase());
+                    Ok(items) => {
                         let open = this
                             .selected
                             .clone()

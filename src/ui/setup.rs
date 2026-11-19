@@ -34,6 +34,7 @@ use gpui_component::{
 use std::collections::HashMap;
 
 mod explorer;
+mod instances;
 mod logs;
 mod onboarding;
 
@@ -92,6 +93,9 @@ pub struct SetupView {
     dashboard: Entity<DashboardView>,
     /// Whether the Content page shows instead of a settings pane.
     showing_content: bool,
+    /// The fields of the Instances page while it is open.
+    instance_inputs: Option<instances::InstanceInputs>,
+    instance_subscriptions: Vec<Subscription>,
     /// The count of config reads from the computer being managed that the fields already show.
     seen_generation: u64,
     /// Whether to keep a remote ricochet running after you log out of that computer.
@@ -164,6 +168,8 @@ impl SetupView {
         let mut view = Self {
             onboarding: (first_run && !showing_added).then_some(Step::Welcome),
             showing_content: !first_run || showing_added,
+            instance_inputs: None,
+            instance_subscriptions: Vec::new(),
             seen_generation: 0,
             keep_running: true,
             page_scroll: ScrollHandle::default(),
@@ -693,7 +699,7 @@ impl SetupView {
                                 .child(added.url.clone()),
                         ),
                 )
-                .child(self.machine_menu("globe", added.name, cx))
+                .child(self.machine_menu(cx))
                 .child(div().flex_1())
                 .child(
                     Button::new("open-in-browser")
@@ -743,12 +749,6 @@ impl SetupView {
             server.is_configured,
         );
         let update = server.available_update();
-        let connection_name = server.connection.name();
-        let connection_icon = if server.connection.is_remote() {
-            "hard-drives"
-        } else {
-            "desktop"
-        };
         let server_entity = self.server.clone();
         let act = move |f: fn(&mut ServerController, &mut Context<ServerController>)| {
             let server = server_entity.clone();
@@ -788,7 +788,7 @@ impl SetupView {
                     .child(marker)
                     .child(label),
             )
-            .child(self.machine_menu(connection_icon, connection_name, cx))
+            .child(self.machine_menu(cx))
             .child(div().flex_1())
             .children(update.map(|release| {
                 let server = self.server.clone();
@@ -838,102 +838,6 @@ impl SetupView {
                         .disabled(stopped || busy)
                         .on_click(act(|s, cx| s.restart(cx))),
                 )
-            })
-    }
-
-    /// The server button, which drops a menu of every machine and added server, a check on the one shown, and ways to add more.
-    fn machine_menu(
-        &self,
-        icon: &'static str,
-        name: String,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let server = self.server.read(cx);
-        let connection = server.connection.clone();
-        let busy = server.activity.is_some();
-        let machines = server.choices();
-        let dashboard = self.dashboard.read(cx);
-        let added = dashboard.added_servers();
-        let showing = dashboard.added_server();
-        let signed_in = dashboard
-            .active_server(cx)
-            .filter(|shown| dashboard.is_signed_in(shown));
-        let dashboard = self.dashboard.clone();
-        let view = cx.entity();
-        Button::new("connection")
-            .icon(ph(icon))
-            .label(name)
-            .outline()
-            .small()
-            .disabled(busy)
-            .dropdown_menu(move |mut menu, _, _| {
-                for machine in &machines {
-                    let target = machine.clone();
-                    let view = view.clone();
-                    menu = menu.item(
-                        PopupMenuItem::new(machine.name())
-                            .icon(ph(if machine.is_remote() {
-                                "hard-drives"
-                            } else {
-                                "desktop"
-                            }))
-                            .checked(showing.is_none() && *machine == connection)
-                            .on_click(move |_, _, cx| {
-                                let target = target.clone();
-                                view.update(cx, |this, cx| this.show_machine(target, cx));
-                            }),
-                    );
-                }
-                for added in &added {
-                    let target = added.clone();
-                    let view = view.clone();
-                    menu = menu.item(
-                        PopupMenuItem::new(added.name.clone())
-                            .icon(ph("globe"))
-                            .checked(showing.as_ref() == Some(added))
-                            .on_click(move |_, _, cx| {
-                                let target = target.clone();
-                                view.update(cx, |this, cx| this.show_added(target, cx));
-                            }),
-                    );
-                }
-                let (add_machine, add_server) = (view.clone(), view.clone());
-                menu = menu
-                    .separator()
-                    .item(PopupMenuItem::new("Add machine").icon(ph("plus")).on_click(
-                        move |_, _, cx| {
-                            add_machine.update(cx, |this, cx| {
-                                this.dashboard
-                                    .update(cx, |dashboard, cx| dashboard.show_managed(cx));
-                                this.onboarding = Some(Step::Target);
-                                cx.notify();
-                            });
-                        },
-                    ))
-                    .item(PopupMenuItem::new("Add server").icon(ph("globe")).on_click(
-                        move |_, _, cx| add_server.update(cx, |this, cx| this.add_server(cx)),
-                    ));
-                if let Some(shown) = signed_in.clone() {
-                    let dashboard = dashboard.clone();
-                    menu = menu.item(
-                        PopupMenuItem::new(format!("Sign out of {}", shown.name))
-                            .icon(ph("sign-in"))
-                            .on_click(move |_, _, cx| {
-                                dashboard.update(cx, |d, cx| d.sign_out(&shown, cx))
-                            }),
-                    );
-                }
-                if let Some(shown) = showing.clone() {
-                    let dashboard = dashboard.clone();
-                    menu = menu.item(
-                        PopupMenuItem::new(format!("Remove {}", shown.name))
-                            .icon(ph("trash"))
-                            .on_click(move |_, _, cx| {
-                                dashboard.update(cx, |d, cx| d.remove_server(&shown, cx))
-                            }),
-                    );
-                }
-                menu
             })
     }
 
@@ -2530,13 +2434,13 @@ impl Render for SetupView {
             .text_color(cx.theme().foreground)
             .child(self.controls(cx))
             .child(rule(cx))
-            .child(
-                h_flex()
-                    .flex_1()
-                    .min_h_0()
-                    .child(self.sidebar(cx))
-                    .child(self.detail(cx)),
-            )
+            .child(h_flex().flex_1().min_h_0().map(|body| {
+                if self.instance_inputs.is_some() {
+                    body.child(self.instances_page(cx))
+                } else {
+                    body.child(self.sidebar(cx)).child(self.detail(cx))
+                }
+            }))
             .capture_any_mouse_down({
                 let pressed = self.focus_at_press.clone();
                 move |_, window, cx| *pressed.borrow_mut() = window.focused(cx)
