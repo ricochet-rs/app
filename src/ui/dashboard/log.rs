@@ -47,14 +47,15 @@ impl LogLine {
             return plain();
         };
         let mut parts = prefix.split_whitespace();
-        let Some(stamp) = parts
+        let Some(time) = parts
             .next()
-            .filter(|stamp| stamp.len() >= 19 && stamp.as_bytes()[10] == b'T')
+            .filter(|stamp| stamp.as_bytes().get(10) == Some(&b'T'))
+            .and_then(|stamp| stamp.get(11..19))
         else {
             return plain();
         };
         Self {
-            time: Some(stamp[11..19].to_owned().into()),
+            time: Some(time.to_owned().into()),
             stderr: parts.next() == Some("stderr"),
             text: text.to_owned().into(),
         }
@@ -224,5 +225,6 @@ mod tests {
         assert!(!line.stderr);
         assert_eq!(line.text.as_ref(), "Listening");
         assert_eq!(LogLine::parse("plain [text]").text.as_ref(), "plain [text]");
+        assert_eq!(LogLine::parse("[2026-11-19Tééé] x").time, None);
     }
 }

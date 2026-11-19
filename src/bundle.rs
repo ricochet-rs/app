@@ -3,8 +3,8 @@
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use std::path::{Path, PathBuf};
 
-/// Folders ricochet never wants in a bundle, as the CLI leaves them out.
-const ALWAYS_EXCLUDED: [&str; 12] = [
+/// Paths a bundle never carries: what the CLI always leaves out, plus Git history and local secrets.
+const ALWAYS_EXCLUDED: [&str; 22] = [
     ".venv",
     ".venv/**",
     ".renv",
@@ -17,6 +17,16 @@ const ALWAYS_EXCLUDED: [&str; 12] = [
     ".ipynb_checkpoints/**",
     "**/.ipynb_checkpoints",
     "**/.ipynb_checkpoints/**",
+    ".git",
+    ".git/**",
+    "**/.git/**",
+    ".env",
+    "**/.env",
+    ".env.*",
+    "**/.env.*",
+    "**/.Renviron",
+    "**/.Rhistory",
+    "**/.Rproj.user/**",
 ];
 
 /// A folder ready to upload: its `_ricochet.toml`, the item it deploys again if any, and its files as a gzip tar.

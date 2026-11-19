@@ -73,7 +73,7 @@ Write `servers.json` readable only by its owner, because it holds API keys.
 Open a managed SSH server's tunnel through `Backend::reach_dashboard` before every API call, because the API answers on `localhost` only while the tunnel is up.
 Open apps and documents in the browser, because what ricochet serves is web content.
 Encrypt environment variables with RSA-OAEP-SHA256 under the key from `/api/v0/public-key`, as the CLI does, because ricochet rejects plain values.
-Bundle a folder with the CLI's rules in `src/bundle.rs`: the always-excluded folders and the `include` and `exclude` globs of `_ricochet.toml`.
+Bundle a folder with the CLI's rules in `src/bundle.rs`, the always-excluded folders and the `include` and `exclude` globs of `_ricochet.toml`, and also leave out `.git` and local secret files such as `.env` and `.Renviron`, because the CLI rules would upload them.
 Read logs as streamed text from `/api/v0/content/logs/{id}`, where an instance's id and a task run's id are also their log ids.
 Leave out a page that needs data the REST API doesn't serve, such as users or collaborators, because the web UI reads it through server functions that accept only a browser session.
 
