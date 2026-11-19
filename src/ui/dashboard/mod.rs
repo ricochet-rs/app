@@ -664,18 +664,7 @@ impl DashboardView {
             .child(
                 h_flex()
                     .gap_2()
-                    .child(
-                        Button::new("install-instead")
-                            .label("Install ricochet on a machine instead")
-                            .ghost()
-                            .small()
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.adding_server = false;
-                                this.add_problem = None;
-                                cx.emit(InstallInstead);
-                            })),
-                    )
-                    .child(div().flex_1())
+                    .justify_end()
                     .when(cancellable, |row| {
                         row.child(
                             Button::new("cancel-add")
@@ -696,6 +685,27 @@ impl DashboardView {
                             .primary()
                             .small()
                             .on_click(cx.listener(|this, _, _, cx| this.add_server(cx))),
+                    ),
+            )
+            .child(rule(cx))
+            .child(
+                h_flex()
+                    .gap_1()
+                    .flex_wrap()
+                    .items_center()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(prose("Want to run ricochet yourself?"))
+                    .child(
+                        Button::new("install-instead")
+                            .label("Install it on a machine")
+                            .link()
+                            .small()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.adding_server = false;
+                                this.add_problem = None;
+                                cx.emit(InstallInstead);
+                            })),
                     ),
             )
     }
