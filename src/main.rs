@@ -15,6 +15,7 @@ mod release;
 mod service;
 mod shell;
 mod ui;
+mod updater;
 
 use controller::ServerController;
 use gpui::{
@@ -27,6 +28,7 @@ use ui::setup::SetupView;
 actions!(ricochet, [Quit]);
 
 fn main() {
+    updater::clean_up();
     Application::new()
         .with_assets(assets::Assets)
         .run(|cx: &mut App| {

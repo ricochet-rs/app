@@ -93,7 +93,7 @@ impl Release {
 }
 
 /// Compares dotted versions number by number, so 0.10.0 is newer than 0.9.0.
-fn compare_versions(a: &str, b: &str) -> Ordering {
+pub fn compare_versions(a: &str, b: &str) -> Ordering {
     let parts = |version: &str| -> Vec<u64> {
         version
             .split('.')

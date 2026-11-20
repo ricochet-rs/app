@@ -1,4 +1,5 @@
-# The same toolchain ricochet pins, so the Apple Silicon agent, which has no default toolchain, already has it.
+# The same toolchain ricochet pins, with the Windows target `just windows` and `just lint-windows` cross-compile for.
 [toolchain]
 channel = "1.99.1"
 components = ["rustfmt", "clippy"]
+targets = ["x86_64-pc-windows-msvc"]
