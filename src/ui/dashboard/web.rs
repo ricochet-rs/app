@@ -5,34 +5,33 @@ use super::DashboardView;
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Entity, Window, div};
 use gpui_component::webview::WebView;
-use gpui_component::wry::{NewWindowResponse, WebContext, WebViewBuilder};
+use gpui_component::wry::{
+    NewWindowResponse, ProxyConfig, ProxyEndpoint, WebContext, WebViewBuilder,
+};
 
-pub struct Web {
+/// One webview, with the folder it keeps cookies and storage in.
+struct Slot {
     /// Keeps cookies and storage in the app's folder, because WebView2 can't write next to the program.
     context: WebContext,
     view: Option<Entity<WebView>>,
     /// The server address the webview loaded last.
     loaded: Option<String>,
-    /// Advances GTK's loop, which WebKitGTK needs and GPUI doesn't run.
-    #[cfg(target_os = "linux")]
-    gtk_loop: Option<gpui::Task<()>>,
+    /// The proxy host and port the webview was built with.
+    proxy: Option<(String, String)>,
 }
 
-impl Default for Web {
-    fn default() -> Self {
-        let folder = dirs::data_local_dir().map(|dir| dir.join("ricochet-app/webview"));
+impl Slot {
+    fn new(folder: &str) -> Self {
+        let folder = dirs::data_local_dir().map(|dir| dir.join("ricochet-app").join(folder));
         Self {
             context: WebContext::new(folder),
             view: None,
             loaded: None,
-            #[cfg(target_os = "linux")]
-            gtk_loop: None,
+            proxy: None,
         }
     }
-}
 
-impl Web {
-    pub fn hide(&self, cx: &mut gpui::App) {
+    fn hide(&self, cx: &mut gpui::App) {
         if let Some(view) = &self.view
             && view.read(cx).visible()
         {
@@ -41,6 +40,41 @@ impl Web {
     }
 }
 
+/// The web UI's webviews: one that connects directly, and one that goes through the proxy you entered.
+///
+/// They are separate because WebView2 takes a proxy only when its environment starts,
+/// and WKWebView and WebKitGTK keep it in the data store every webview in it shares,
+/// while ricochet on `localhost` must never go through the proxy.
+pub struct Web {
+    direct: Slot,
+    proxied: Slot,
+    /// Advances GTK's loop, which WebKitGTK needs and GPUI doesn't run.
+    #[cfg(target_os = "linux")]
+    gtk_loop: Option<gpui::Task<()>>,
+}
+
+impl Default for Web {
+    fn default() -> Self {
+        Self {
+            direct: Slot::new("webview"),
+            proxied: Slot::new("webview-proxy"),
+            #[cfg(target_os = "linux")]
+            gtk_loop: None,
+        }
+    }
+}
+
+impl Web {
+    pub fn hide(&self, cx: &mut gpui::App) {
+        self.direct.hide(cx);
+        self.proxied.hide(cx);
+    }
+}
+
+/// The data store the proxied webview keeps on macOS, apart from the default one the direct webview uses.
+#[cfg(target_os = "macos")]
+const PROXIED_STORE: [u8; 16] = *b"ricochet-proxied";
+
 impl DashboardView {
     pub(super) fn web_page(
         &mut self,
@@ -48,15 +82,28 @@ impl DashboardView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let view = match &self.web.view {
+        let proxy = crate::settings::webview_proxy(&url)
+            .and_then(|proxy| crate::settings::endpoint(&proxy));
+        let (slot, other) = if proxy.is_some() {
+            (&mut self.web.proxied, &self.web.direct)
+        } else {
+            (&mut self.web.direct, &self.web.proxied)
+        };
+        other.hide(cx);
+        if slot.view.is_some() && slot.proxy != proxy {
+            // The proxy changed, so the webview starts again with the new one.
+            slot.view = None;
+            slot.loaded = None;
+        }
+        let view = match &slot.view {
             Some(view) => {
-                if self.web.loaded.as_ref() != Some(&url) {
+                if slot.loaded.as_ref() != Some(&url) {
                     view.update(cx, |view, _| view.load_url(&url));
                 }
-                view.clone()
+                Ok(view.clone())
             }
             None => {
-                let built = WebViewBuilder::new_with_web_context(&mut self.web.context)
+                let mut builder = WebViewBuilder::new_with_web_context(&mut slot.context)
                     .with_url(&url)
                     .with_new_window_req_handler(|url, _| {
                         // Content on the server can ask for any URL, so only web pages reach the browser.
@@ -65,26 +112,41 @@ impl DashboardView {
                             let _ = open::that(&url);
                         }
                         NewWindowResponse::Deny
-                    })
-                    .build_as_child(&parent(window));
-                match built {
-                    Ok(built) => {
-                        #[cfg(target_os = "linux")]
-                        {
-                            self.web.gtk_loop = Some(linux::run_gtk(cx));
-                        }
-                        let view = cx.new(|cx| WebView::new(built, window, cx));
-                        self.web.view = Some(view.clone());
-                        view
-                    }
-                    Err(error) => {
-                        let message = format!("The web view didn't start: {error}");
-                        return self.centered(div().child(message), cx).into_any_element();
+                    });
+                if let Some((host, port)) = proxy.clone() {
+                    builder =
+                        builder.with_proxy_config(ProxyConfig::Http(ProxyEndpoint { host, port }));
+                    #[cfg(target_os = "macos")]
+                    {
+                        use gpui_component::wry::WebViewBuilderExtDarwin;
+                        builder = builder.with_data_store_identifier(PROXIED_STORE);
                     }
                 }
+                let built = builder.build_as_child(&parent(window));
+                built.map(|built| {
+                    let view = cx.new(|cx| WebView::new(built, window, cx));
+                    slot.view = Some(view.clone());
+                    slot.proxy = proxy.clone();
+                    view
+                })
             }
         };
-        self.web.loaded = Some(url);
+        let view = match view {
+            Ok(view) => view,
+            Err(error) => {
+                let message = format!("The web view didn't start: {error}");
+                return self.centered(div().child(message), cx).into_any_element();
+            }
+        };
+        #[cfg(target_os = "linux")]
+        if self.web.gtk_loop.is_none() {
+            self.web.gtk_loop = Some(linux::run_gtk(cx));
+        }
+        if proxy.is_some() {
+            self.web.proxied.loaded = Some(url);
+        } else {
+            self.web.direct.loaded = Some(url);
+        }
         if self.covered {
             self.hide_web(cx);
         } else if !view.read(cx).visible() {

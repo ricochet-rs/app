@@ -57,7 +57,10 @@ Give ricochet's service `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` in both cases
 Keep the proxy out of command lines and world-readable files, because its URL can hold a password: write the launchd job and the systemd unit readable by their owner only, and hand it to a remote install through stdin.
 Always put `localhost`, `127.0.0.1` and `::1` in `NO_PROXY`, and reach ricochet's health check without a proxy, because the app and ricochet talk to each other on this machine.
 Read the system proxy from `scutil --proxy` on macOS, the `Internet Settings` registry key on Windows, and `HTTPS_PROXY` elsewhere, including a login shell on an SSH host; PAC files aren't read.
-Send the app's own downloads through `net::download`, which uses the local machine's choice, and leave the webview on the operating system's proxy, which already handles PAC.
+Keep the app's own proxy in `settings.json` next to `servers.json`, readable by its owner only, and show it on the **App settings** page, because the app may need a proxy to reach a server before any machine is set up.
+Send the app's own downloads through `net::download`, which uses that setting.
+Leave the webview on the operating system's proxy, which already handles PAC, unless you entered a proxy yourself.
+Keep two webviews, one direct and one through the proxy you entered, each with its own data folder and, on macOS, its own data store, because WebView2 takes a proxy only when its environment starts, WKWebView and WebKitGTK keep it in the shared store, and ricochet on `localhost` must never go through it.
 
 ## Authentication
 
@@ -84,7 +87,7 @@ Hand wry an Xlib handle on Linux, because GPUI gives out an XCB one and wry acce
 Put the app's own controls, the server menu, the managed server's status and its actions, in the title bar beside the window buttons on macOS and Windows, and leave the rest of the window to the web UI.
 Open and close a managed machine's settings with ⌘, on macOS and Ctrl+, elsewhere, the **Settings…** item in the app menu and the title bar's settings button, through the `ToggleSettings` action registered on the app, because a key binding inside the window never fires while the webview has focus.
 Defer the window update in an app-level action handler with `cx.defer`, because GPUI runs the handler while it holds the window and a nested `WindowHandle::update` fails silently.
-Open **Manage instances** with the same shortcut and button when the instance shown has no settings in the app, such as a server added by address, so the shortcut never does nothing.
+Open **App settings** with the same shortcut and button when the instance shown has no settings of its own, such as a server added by address, so the shortcut never does nothing.
 Hide the webview whenever something else must show over the content area, such as the server menu, because the system draws it above the GPUI window.
 Hand only `http` and `https` links from the webview to the browser, because content on the server can ask to open any URL.
 Keep the webview's cookies and storage in the app's data folder, because WebView2 can't write next to the program.

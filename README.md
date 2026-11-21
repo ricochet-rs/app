@@ -62,7 +62,9 @@ For a machine the app manages, press ⌘, on macOS or Ctrl+, on Windows and Linu
 Each machine's **Network proxy** page, under **Server** in its settings, sets the HTTP proxy ricochet uses there to install packages and deploy from Git.
 By default it uses the machine's own settings: System Settings on macOS, Windows Settings on Windows, and `HTTPS_PROXY` on Linux and SSH hosts.
 Choose **Use this proxy** to enter one yourself, with the hosts that should bypass it.
-The app downloads ricochet through the proxy this machine uses, and shows each server's web UI through your operating system's proxy settings.
+The app itself has a **Network proxy** setting on its **App settings** page, which ⌘, or Ctrl+, opens for a server you added by address, and **App settings** opens from the sidebar of a machine's settings.
+By default the app follows your operating system's proxy settings.
+Enter a proxy there when the app needs one to reach a ricochet server or to download ricochet.
 
 ## Bring your own languages
 

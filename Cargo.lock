@@ -5681,6 +5681,7 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "gtk",
+ "lb-wry",
  "libc",
  "open",
  "plist",

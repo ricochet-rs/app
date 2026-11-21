@@ -34,6 +34,7 @@ use gpui_component::{
 };
 use std::collections::HashMap;
 
+mod app_settings;
 mod explorer;
 mod instances;
 mod logs;
@@ -96,6 +97,8 @@ pub struct SetupView {
     showing_content: bool,
     /// The fields of the Instances page while it is open.
     instance_inputs: Option<instances::InstanceInputs>,
+    /// The fields of the app settings page while it is open.
+    app_settings: Option<app_settings::AppSettingsInputs>,
     instance_subscriptions: Vec<Subscription>,
     /// The count of config reads from the computer being managed that the fields already show.
     seen_generation: u64,
@@ -170,6 +173,7 @@ impl SetupView {
             onboarding: (first_run && !showing_added).then_some(Step::Welcome),
             showing_content: !first_run || showing_added,
             instance_inputs: None,
+            app_settings: None,
             instance_subscriptions: Vec::new(),
             seen_generation: 0,
             keep_running: true,
@@ -807,7 +811,7 @@ impl SetupView {
     }
 
     /// Opens the settings of the machine shown, or closes them again, as ⌘, does in a Mac app.
-    /// An instance without settings of its own, such as a server added by address, opens Manage instances instead.
+    /// An instance without settings of its own, such as a server added by address, opens the app settings instead.
     pub fn toggle_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.onboarding.is_some() {
             return;
@@ -816,8 +820,10 @@ impl SetupView {
             self.instance_inputs = None;
             self.instance_subscriptions.clear();
             cx.notify();
+        } else if self.app_settings.is_some() {
+            self.close_app_settings(cx);
         } else if !self.has_settings(cx) {
-            self.open_instances(window, cx);
+            self.open_app_settings(window, cx);
         } else if self.showing_content {
             self.select(self.section, cx);
         } else {
@@ -832,8 +838,9 @@ impl SetupView {
         } else {
             "Ctrl+,"
         };
-        let open =
-            self.instance_inputs.is_some() || (!self.showing_content && self.has_settings(cx));
+        let open = self.instance_inputs.is_some()
+            || self.app_settings.is_some()
+            || (!self.showing_content && self.has_settings(cx));
         let button = if !open {
             Button::new("settings")
                 .icon(ph("sliders-horizontal"))
@@ -982,6 +989,18 @@ impl SetupView {
             return sidebar;
         }
         sidebar
+            .child(group_label("App"))
+            .child(
+                self.sidebar_row(
+                    "app-settings",
+                    "sliders-horizontal",
+                    "App settings",
+                    false,
+                    false,
+                    cx,
+                )
+                .on_click(cx.listener(|this, _, window, cx| this.open_app_settings(window, cx))),
+            )
             .child(group_label("Required"))
             .child(self.sidebar_item(
                 SetupSection::Authentication,
@@ -2476,6 +2495,7 @@ impl Render for SetupView {
         let shows_dashboard = self.onboarding.is_none()
             && !(self.server.read(cx).loading && !added)
             && self.instance_inputs.is_none()
+            && self.app_settings.is_none()
             && self.showing_content;
         if !shows_dashboard {
             self.dashboard
@@ -2508,6 +2528,8 @@ impl SetupView {
             .child(h_flex().flex_1().min_h_0().map(|body| {
                 if self.instance_inputs.is_some() {
                     body.child(self.instances_page(cx))
+                } else if self.app_settings.is_some() {
+                    body.child(self.app_settings_page(cx))
                 } else if self.showing_content {
                     body.child(self.detail(cx))
                 } else {

@@ -1,35 +1,15 @@
-//! HTTP requests from this computer, through the proxy the local machine's settings choose.
+//! HTTP requests from this computer, through the proxy the app's settings choose.
 
 use crate::config::Proxy;
-use std::sync::RwLock;
 use std::time::Duration;
 
-/// The proxy for the app's own downloads, as the local machine's Network proxy pane resolves it:
-/// `None` until that pane is read, then `Some(None)` to connect directly.
-static DOWNLOAD_PROXY: RwLock<Option<Option<String>>> = RwLock::new(None);
-
-/// Points the app's downloads at the proxy in `environment`, the variables the local service gets.
-pub fn set_download_proxy(environment: &[(String, String)]) {
-    let proxy = Proxy::from_environment(
-        environment
-            .iter()
-            .map(|(name, value)| (name.as_str(), value.as_str())),
-    )
-    .map(|proxy| proxy.url);
-    if let Ok(mut current) = DOWNLOAD_PROXY.write() {
-        *current = Some(proxy);
-    }
-}
-
-/// A request to the internet, through the download proxy when there is one.
+/// A request to the internet, through the app's proxy when there is one.
 pub fn download(
     url: &str,
     timeout: Duration,
 ) -> ureq::RequestBuilder<ureq::typestate::WithoutBody> {
-    let chosen = DOWNLOAD_PROXY.read().ok().and_then(|proxy| proxy.clone());
-    let proxy = chosen
-        .unwrap_or_else(|| system_proxy().map(|proxy| proxy.url))
-        .and_then(|url| ureq::Proxy::new(&url).ok());
+    let proxy =
+        crate::settings::download_proxy().and_then(|proxy| ureq::Proxy::new(&proxy.url).ok());
     ureq::Agent::config_builder()
         .proxy(proxy)
         .timeout_global(Some(timeout))

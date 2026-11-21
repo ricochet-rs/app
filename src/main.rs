@@ -15,6 +15,7 @@ mod ports;
 mod release;
 mod servers;
 mod service;
+mod settings;
 mod shell;
 mod ui;
 
