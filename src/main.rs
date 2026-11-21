@@ -82,10 +82,14 @@ fn main() {
                 let server = cx.new(ServerController::new);
                 let view = cx.new(|cx| SetupView::new(server, window, cx));
                 // The shortcut and the menu item reach the window wherever the focus is.
+                // GPUI runs this while it holds the window, so the window is updated once it lets go.
                 let (settings, handle) = (view.downgrade(), window.window_handle());
                 cx.on_action(move |_: &ToggleSettings, cx| {
-                    let _ = handle.update(cx, |_, window, cx| {
-                        settings.update(cx, |view, cx| view.toggle_settings(window, cx))
+                    let settings = settings.clone();
+                    cx.defer(move |cx| {
+                        let _ = handle.update(cx, |_, window, cx| {
+                            settings.update(cx, |view, cx| view.toggle_settings(window, cx))
+                        });
                     });
                 });
                 cx.new(|cx| Root::new(view, window, cx))

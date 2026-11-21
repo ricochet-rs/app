@@ -83,6 +83,7 @@ Advance GTK's loop from a GPUI timer while the webview exists, because GPUI does
 Hand wry an Xlib handle on Linux, because GPUI gives out an XCB one and wry accepts only Xlib; both name the same X window.
 Put the app's own controls, the server menu, the managed server's status and its actions, in the title bar beside the window buttons on macOS and Windows, and leave the rest of the window to the web UI.
 Open and close a managed machine's settings with ⌘, on macOS and Ctrl+, elsewhere, the **Settings…** item in the app menu and the title bar's settings button, through the `ToggleSettings` action registered on the app, because a key binding inside the window never fires while the webview has focus.
+Defer the window update in an app-level action handler with `cx.defer`, because GPUI runs the handler while it holds the window and a nested `WindowHandle::update` fails silently.
 Open **Manage instances** with the same shortcut and button when the instance shown has no settings in the app, such as a server added by address, so the shortcut never does nothing.
 Hide the webview whenever something else must show over the content area, such as the server menu, because the system draws it above the GPUI window.
 Hand only `http` and `https` links from the webview to the browser, because content on the server can ask to open any URL.
