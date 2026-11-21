@@ -6,7 +6,7 @@ mod ssh;
 pub use local::LocalBackend;
 pub use ssh::{SshBackend, is_valid_host};
 
-use crate::config::ServerConfig;
+use crate::config::{Proxy, ProxySettings, ServerConfig};
 use crate::controller::ServerStatus;
 use crate::error::{AppError, Result};
 use crate::paths::Paths;
@@ -89,6 +89,18 @@ pub trait Backend: Send + Sync {
     fn list_dir(&self, path: &Path) -> Result<Vec<DirEntry>>;
     /// Removes `paths` on that computer, skipping any that don't exist.
     fn remove_data(&self, paths: &[PathBuf]) -> Result<()>;
+    /// The proxy that computer's own settings name, for the Network proxy pane's system choice.
+    fn system_proxy(&self) -> Option<Proxy>;
+    /// Sends that computer's downloads of ricochet through the proxy in `environment`.
+    fn use_proxy(&self, environment: &[(String, String)]);
+
+    /// The proxy variables ricochet's service gets on that computer, as `settings` choose them.
+    fn proxy_environment(&self, settings: &ProxySettings) -> Vec<(String, String)> {
+        settings
+            .resolve(|| self.system_proxy())
+            .map(|proxy| proxy.environment())
+            .unwrap_or_default()
+    }
 
     /// The last `lines` lines of the text file at `path` on that computer.
     fn tail(&self, path: &Path, lines: usize) -> Result<String> {

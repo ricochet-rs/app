@@ -9,8 +9,8 @@ use super::icons::ph;
 use super::section::SetupSection;
 use crate::config::section::{Field as _, SettingsSection as _};
 use crate::config::{
-    AuthenticationSettings, Encryption, LogLevel, LogRotation, PackageIndex, Provider, RRepository,
-    Role, ServerConfig,
+    AuthenticationSettings, Encryption, LogLevel, LogRotation, PackageIndex, Provider, ProxyMode,
+    RRepository, Role, ServerConfig,
 };
 use crate::connections::Connection;
 use crate::controller::{Failure, ServerController, ServerStatus};
@@ -337,6 +337,18 @@ impl SetupView {
             "365",
             false,
             audit_log.retention_days
+        );
+        bind!(
+            "proxy.url",
+            "http://proxy.example.com:8080",
+            false,
+            proxy.url
+        );
+        bind!(
+            "proxy.bypass",
+            ".corp.example.com, intranet",
+            false,
+            proxy.bypass
         );
         bind!(
             "telemetry.endpoint",
@@ -751,7 +763,7 @@ impl SetupView {
                     server.update(cx, |server, cx| server.update_to(release.clone(), cx))
                 })
         }))
-        .when(configured, |row| row.child(self.view_switch(cx)))
+        .when(configured, |row| row.child(self.settings_button(cx)))
         .when(configured, |row| {
             row.child(if stopped {
                 Button::new("start")
@@ -789,31 +801,47 @@ impl SetupView {
         reachable.then_some(server.url)
     }
 
-    /// Switches the window between the server's web UI and the settings of the machine it runs on.
-    fn view_switch(&self, cx: &mut Context<Self>) -> Div {
-        let showing = self.showing_content;
-        let tab = |id: &'static str, icon: &'static str, label: &'static str, active: bool| {
-            let button = Button::new(id).icon(ph(icon)).label(label).small();
-            if active {
-                button.primary()
-            } else {
-                button.outline()
-            }
+    /// Whether the window has settings to show: the managed machine's, once ricochet is set up there.
+    fn has_settings(&self, cx: &App) -> bool {
+        self.onboarding.is_none()
+            && self.instance_inputs.is_none()
+            && self.dashboard.read(cx).added_server().is_none()
+            && self.server.read(cx).is_configured
+    }
+
+    /// Opens the settings of the machine shown, or closes them again, as ⌘, does in a Mac app.
+    pub fn toggle_settings(&mut self, cx: &mut Context<Self>) {
+        if !self.has_settings(cx) {
+            return;
+        }
+        if self.showing_content {
+            self.select(self.section, cx);
+        } else {
+            self.show_content(cx);
+        }
+    }
+
+    /// The title bar's settings button, which reads Done while the settings show.
+    fn settings_button(&self, cx: &mut Context<Self>) -> Button {
+        let shortcut = if cfg!(target_os = "macos") {
+            "⌘,"
+        } else {
+            "Ctrl+,"
         };
-        h_flex()
-            .child(
-                tab("view-content", "squares-four", "Content", showing)
-                    .on_click(cx.listener(|this, _, _, cx| this.show_content(cx))),
-            )
-            .child(
-                tab("view-settings", "sliders-horizontal", "Settings", !showing).on_click(
-                    cx.listener(|this, _, _, cx| {
-                        if this.showing_content {
-                            this.select(this.section, cx);
-                        }
-                    }),
-                ),
-            )
+        let button = if self.showing_content {
+            Button::new("settings")
+                .icon(ph("sliders-horizontal"))
+                .tooltip(format!("Settings ({shortcut})"))
+                .ghost()
+        } else {
+            Button::new("settings")
+                .icon(ph("check"))
+                .label("Done")
+                .primary()
+        };
+        button
+            .xsmall()
+            .on_click(cx.listener(|this, _, _, cx| this.toggle_settings(cx)))
     }
 
     // MARK: Sidebar
@@ -1003,6 +1031,7 @@ impl SetupView {
             SetupSection::Logging => self.logging_pane(cx),
             SetupSection::AuditLog => self.audit_pane(cx),
             SetupSection::Telemetry => self.telemetry_pane(cx),
+            SetupSection::Proxy => self.proxy_pane(cx),
             SetupSection::DangerZone => self.danger_zone_pane(cx),
         };
 
@@ -1232,6 +1261,18 @@ impl SetupView {
             |this, encryption, window, cx| {
                 this.config.email.encryption = encryption;
                 this.sync_email_port_hint(window, cx);
+                this.edited(cx);
+            },
+            window,
+            cx,
+        );
+        self.bind_select(
+            "proxy-mode",
+            ProxyMode::ALL,
+            ProxyMode::title,
+            |config| config.proxy.mode,
+            |this, mode, _, cx| {
+                this.config.proxy.mode = mode;
                 this.edited(cx);
             },
             window,
@@ -2356,6 +2397,46 @@ impl SetupView {
             .gap_4()
             .children(notice)
             .child(settings)
+            .into_any_element()
+    }
+
+    fn proxy_pane(&self, cx: &mut Context<Self>) -> AnyElement {
+        let mode = self.config.proxy.mode;
+        let system_hint = if self.server.read(cx).connection.is_remote() {
+            "Use the proxy that `HTTPS_PROXY` names on that machine, if any."
+        } else if cfg!(target_os = "macos") {
+            "Use the proxy set in System Settings under Network. A proxy configuration file (PAC) isn't read."
+        } else if cfg!(windows) {
+            "Use the proxy set in Windows Settings under Network & internet. A setup script (PAC) isn't read."
+        } else {
+            "Use the proxy that `HTTPS_PROXY` names for this app, if any."
+        };
+        card(cx)
+            .max_w(px(760.0))
+            .child(self.choice(
+                "proxy-mode",
+                "Proxy",
+                Some(match mode {
+                    ProxyMode::System => system_hint,
+                    ProxyMode::Manual => "Send ricochet's downloads through the proxy below.",
+                    ProxyMode::Off => "Connect to the internet without a proxy.",
+                }),
+                cx,
+            ))
+            .when(mode == ProxyMode::Manual, |pane| {
+                pane.child(self.text_field(
+                    "Proxy address",
+                    "proxy.url",
+                    Some("The proxy's URL with its port, like http://proxy.example.com:8080."),
+                    cx,
+                ))
+                .child(self.text_field(
+                    "Bypass the proxy for",
+                    "proxy.bypass",
+                    Some("Hosts to reach directly, separated by commas. ricochet always reaches `localhost` directly."),
+                    cx,
+                ))
+            })
             .into_any_element()
     }
 

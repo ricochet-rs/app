@@ -89,12 +89,12 @@ impl Backend for LocalBackend {
     }
 
     fn health(&self, port: u16) -> bool {
-        ureq::get(&format!("http://localhost:{port}/health"))
-            .config()
-            .timeout_global(Some(Duration::from_secs(2)))
-            .build()
-            .call()
-            .is_ok_and(|response| response.status() == 200)
+        crate::net::local(
+            &format!("http://localhost:{port}/health"),
+            Duration::from_secs(2),
+        )
+        .call()
+        .is_ok_and(|response| response.status() == 200)
     }
 
     fn is_port_free(&self, port: u16) -> bool {
@@ -103,6 +103,14 @@ impl Backend for LocalBackend {
 
     fn install_release(&self, release: &Release) -> Result<()> {
         release.install(&self.paths)
+    }
+
+    fn system_proxy(&self) -> Option<crate::config::Proxy> {
+        crate::net::system_proxy()
+    }
+
+    fn use_proxy(&self, environment: &[(String, String)]) {
+        crate::net::set_download_proxy(environment);
     }
 
     fn prepare(&self) -> Result<()> {

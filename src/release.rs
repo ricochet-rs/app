@@ -41,12 +41,10 @@ impl Release {
         struct Index {
             latest: String,
         }
-        let mut response = ureq::get("https://ricochet.rs/releases.json")
-            .config()
-            .timeout_global(Some(Duration::from_secs(15)))
-            .build()
-            .call()
-            .map_err(|_| AppError::Download("the list of ricochet releases".into()))?;
+        let mut response =
+            crate::net::download("https://ricochet.rs/releases.json", Duration::from_secs(15))
+                .call()
+                .map_err(|_| AppError::Download("the list of ricochet releases".into()))?;
         let mut body = String::new();
         response
             .body_mut()

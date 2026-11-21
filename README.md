@@ -55,7 +55,14 @@ Switch instances from the menu in the title bar.
 It lists this machine, the SSH hosts you connected to, and any other ricochet server you connected to by its address.
 **Connect another instance** connects to a running ricochet by its address, or installs ricochet on a machine instead, and **Manage instances** lets you rename, group and reorder the list.
 A server you connected to by address shows only its web UI, since the app doesn't manage it.
-For a machine the app manages, **Settings** in the title bar switches to its configuration and **Content** back to its web UI.
+For a machine the app manages, press ⌘, on macOS or Ctrl+, on Windows and Linux, choose **Settings…** in the app menu, or select the settings button in the title bar to change its configuration, and select **Done** to return to its web UI.
+
+## Behind a proxy
+
+Each machine's **Network proxy** page, under **Server** in its settings, sets the HTTP proxy ricochet uses there to install packages and deploy from Git.
+By default it uses the machine's own settings: System Settings on macOS, Windows Settings on Windows, and `HTTPS_PROXY` on Linux and SSH hosts.
+Choose **Use this proxy** to enter one yourself, with the hosts that should bypass it.
+The app downloads ricochet through the proxy this machine uses, and shows each server's web UI through your operating system's proxy settings.
 
 ## Bring your own languages
 

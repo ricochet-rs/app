@@ -8,6 +8,7 @@ mod config;
 mod connections;
 mod controller;
 mod error;
+mod net;
 mod paths;
 mod person;
 mod ports;
@@ -25,7 +26,7 @@ use gpui::{
 use gpui_component::Root;
 use ui::setup::SetupView;
 
-actions!(ricochet, [Quit]);
+actions!(ricochet, [Quit, ToggleSettings]);
 
 fn main() {
     #[cfg(target_os = "linux")]
@@ -37,18 +38,22 @@ fn main() {
             ui::theme::apply(None, cx);
 
             cx.on_action(|_: &Quit, cx| cx.quit());
-            cx.bind_keys([KeyBinding::new(
-                if cfg!(target_os = "macos") {
-                    "cmd-q"
-                } else {
-                    "ctrl-q"
-                },
-                Quit,
-                None,
-            )]);
+            let (quit, settings) = if cfg!(target_os = "macos") {
+                ("cmd-q", "cmd-,")
+            } else {
+                ("ctrl-q", "ctrl-,")
+            };
+            cx.bind_keys([
+                KeyBinding::new(quit, Quit, None),
+                KeyBinding::new(settings, ToggleSettings, None),
+            ]);
             cx.set_menus(vec![Menu {
                 name: "ricochet".into(),
-                items: vec![MenuItem::action("Quit ricochet", Quit)],
+                items: vec![
+                    MenuItem::action("Settings…", ToggleSettings),
+                    MenuItem::separator(),
+                    MenuItem::action("Quit ricochet", Quit),
+                ],
             }]);
 
             let bounds = Bounds::centered(None, size(px(1120.0), px(780.0)), cx);
@@ -76,6 +81,11 @@ fn main() {
                     .detach();
                 let server = cx.new(ServerController::new);
                 let view = cx.new(|cx| SetupView::new(server, window, cx));
+                // The shortcut and the menu item reach the window wherever the focus is.
+                let settings = view.downgrade();
+                cx.on_action(move |_: &ToggleSettings, cx| {
+                    let _ = settings.update(cx, |view, cx| view.toggle_settings(cx));
+                });
                 cx.new(|cx| Root::new(view, window, cx))
             })
             .expect("ricochet could not open its window");

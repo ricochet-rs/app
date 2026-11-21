@@ -29,10 +29,7 @@ fn from_zip(archive: &[u8], member: &str) -> Option<Vec<u8>> {
 /// Downloads the `.tar.gz` or `.zip` at `url` and installs the executable `member` from it at `destination`.
 pub fn install_executable(member: &str, url: &str, destination: &Path, name: &str) -> Result<()> {
     let fail = || AppError::Download(name.to_owned());
-    let mut response = ureq::get(url)
-        .config()
-        .timeout_global(Some(Duration::from_secs(600)))
-        .build()
+    let mut response = crate::net::download(url, Duration::from_secs(600))
         .call()
         .map_err(|_| fail())?;
     let mut archive = Vec::new();

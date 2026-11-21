@@ -63,7 +63,7 @@ fn text(path: &Path) -> String {
 }
 
 impl Service for LaunchAgent {
-    fn write_job(&self) -> Result<bool> {
+    fn write_job(&self, extra: &[(String, String)]) -> Result<bool> {
         if !Path::new(SANDBOX_EXEC).is_file() {
             return Err(AppError::SandboxUnavailable(SANDBOX_EXEC.into()));
         }
@@ -111,6 +111,9 @@ impl Service for LaunchAgent {
         environment.insert("PATH".into(), path.into());
         environment.insert("UV_PYTHON_INSTALL_DIR".into(), text(&uv_pythons).into());
         environment.insert("JULIAUP_DEPOT_PATH".into(), text(&julia_depot).into());
+        for (name, value) in extra {
+            environment.insert(name.clone(), value.clone().into());
+        }
         let mut keep_alive = Dictionary::new();
         keep_alive.insert("SuccessfulExit".into(), false.into());
 
@@ -213,9 +216,9 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let agent = LaunchAgent::new(Arc::new(Paths::under(home.path().to_path_buf())));
 
-        assert!(agent.write_job().unwrap());
+        assert!(agent.write_job(&[]).unwrap());
         assert!(
-            !agent.write_job().unwrap(),
+            !agent.write_job(&[]).unwrap(),
             "an unchanged job is not rewritten"
         );
 

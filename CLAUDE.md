@@ -49,6 +49,15 @@ Write a key only when it differs from ricochet's default, so a later ricochet de
 Show ricochet's own default R repository, `CRAN = https://cran.rpkgs.com`, in the form but never write it, so the person can save it as is.
 Sort R repositories by name when saving, because ricochet reads them in name order.
 
+## Proxy
+
+Keep each managed machine's proxy in `[desktop.proxy]` of its `ricochet-config.toml`, a table ricochet ignores, because ricochet has no proxy setting and a remote host can sit behind a different proxy than this computer.
+Write nothing for the system choice, so a config without the table follows the machine's own settings.
+Give ricochet's service `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` in both cases, through the launchd job, the systemd unit or the Windows launcher's `--env` arguments, because launchd, systemd and the `Run` entry start it without the proxy variables of a shell, and R, Python and Git read them from the environment.
+Always put `localhost`, `127.0.0.1` and `::1` in `NO_PROXY`, and reach ricochet's health check without a proxy, because the app and ricochet talk to each other on this machine.
+Read the system proxy from `scutil --proxy` on macOS, the `Internet Settings` registry key on Windows, and `HTTPS_PROXY` elsewhere, including a login shell on an SSH host; PAC files aren't read.
+Send the app's own downloads through `net::download`, which uses the local machine's choice, and leave the webview on the operating system's proxy, which already handles PAC.
+
 ## Authentication
 
 Save managed auth only after the person selects **I agree**, because you share your name and email address with ricochet when you sign in through it.
@@ -72,6 +81,7 @@ Run the app on X11 on Linux, through XWayland under Wayland, and start GTK befor
 Advance GTK's loop from a GPUI timer while the webview exists, because GPUI doesn't run it and WebKitGTK paints nothing without it.
 Hand wry an Xlib handle on Linux, because GPUI gives out an XCB one and wry accepts only Xlib; both name the same X window.
 Put the app's own controls, the server menu, the managed server's status and its actions, in the title bar beside the window buttons on macOS and Windows, and leave the rest of the window to the web UI.
+Open and close a managed machine's settings with ⌘, on macOS and Ctrl+, elsewhere, the **Settings…** item in the app menu and the title bar's settings button, through the `ToggleSettings` action registered on the app, because a key binding inside the window never fires while the webview has focus.
 Hide the webview whenever something else must show over the content area, such as the server menu, because the system draws it above the GPUI window.
 Hand only `http` and `https` links from the webview to the browser, because content on the server can ask to open any URL.
 Keep the webview's cookies and storage in the app's data folder, because WebView2 can't write next to the program.

@@ -16,6 +16,8 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 pub struct RunEntry {
     paths: Arc<Paths>,
+    /// Variables the launcher sets for the server, such as its proxy, from the last `write_job`.
+    environment: std::sync::Mutex<Vec<(String, String)>>,
 }
 
 fn text(path: &Path) -> String {
@@ -29,21 +31,30 @@ fn quote(value: &str) -> String {
 
 impl RunEntry {
     pub fn new(paths: Arc<Paths>) -> Self {
-        Self { paths }
+        Self {
+            paths,
+            environment: std::sync::Mutex::new(Vec::new()),
+        }
     }
 
     /// The launcher's arguments: where to run, where to write output, and the server's own command line.
     fn arguments(&self) -> Vec<String> {
         let paths = &self.paths;
-        vec![
-            text(&paths.home),
-            text(&paths.stdout),
-            text(&paths.stderr),
-            text(&paths.binary),
-            "start".into(),
-            "--config".into(),
-            text(&paths.config),
-        ]
+        let environment = self.environment.lock().unwrap_or_else(|e| e.into_inner());
+        let variables = environment
+            .iter()
+            .flat_map(|(name, value)| ["--env".to_owned(), format!("{name}={value}")]);
+        variables
+            .chain([
+                text(&paths.home),
+                text(&paths.stdout),
+                text(&paths.stderr),
+                text(&paths.binary),
+                "start".into(),
+                "--config".into(),
+                text(&paths.config),
+            ])
+            .collect()
     }
 
     /// The command line Windows runs at sign-in.
@@ -88,7 +99,8 @@ impl RunEntry {
 }
 
 impl Service for RunEntry {
-    fn write_job(&self) -> Result<bool> {
+    fn write_job(&self, environment: &[(String, String)]) -> Result<bool> {
+        *self.environment.lock().unwrap_or_else(|e| e.into_inner()) = environment.to_vec();
         let contents = self.command_line();
         let file = self.job_file();
         if std::fs::read_to_string(&file).is_ok_and(|existing| existing == contents) {
