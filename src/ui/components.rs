@@ -415,50 +415,6 @@ pub fn selection_mark(selected: bool, cx: &App) -> Div {
     }
 }
 
-/// A label and its value side by side, as ricochet's item header shows "Content type | Shiny (R)".
-pub fn pill(label: impl Into<SharedString>, value: impl Into<SharedString>, cx: &App) -> Div {
-    h_flex()
-        .text_sm()
-        .border_1()
-        .border_color(cx.theme().border)
-        .child(
-            div()
-                .px_2()
-                .py_0p5()
-                .bg(cx.theme().muted)
-                .text_color(cx.theme().muted_foreground)
-                .child(label.into()),
-        )
-        .child(div().px_2().py_0p5().child(value.into()))
-}
-
-/// A small coloured tag, as ricochet shows an item's tags.
-pub fn chip(text: impl Into<SharedString>, color: Hsla) -> Div {
-    div()
-        .px_1p5()
-        .text_xs()
-        .border_1()
-        .border_color(color.opacity(0.6))
-        .bg(color.opacity(0.12))
-        .text_color(color)
-        .child(text.into())
-}
-
-/// A page's title on the left with its controls, such as a search field, on the right.
-pub fn page_title(title: &str, controls: Option<AnyElement>) -> Div {
-    h_flex()
-        .gap_4()
-        .items_center()
-        .child(
-            div()
-                .flex_1()
-                .text_2xl()
-                .font_weight(gpui::FontWeight::SEMIBOLD)
-                .child(prose(title.to_owned())),
-        )
-        .children(controls)
-}
-
 pub fn rule(cx: &App) -> Div {
     div().h(px(1.0)).w_full().bg(cx.theme().border)
 }

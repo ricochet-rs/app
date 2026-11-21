@@ -44,21 +44,18 @@ Each SSH host is expected to be a Linux machine you can reach with key-based SSH
 
 ## See your content
 
-The **Content** pages at the top of the sidebar show what is deployed to a ricochet server, right in the app.
+The app shows a ricochet server's own web UI inside its window, so everything you can do in the browser works in the app too.
+You sign in there the same way you do in the browser.
+Apps and documents open in your browser.
 
-- **Apps** and **Tasks** list the items you can access in a table, as ricochet's web UI does. Each item has an overview with its deployment history, its build, instance and run logs, what is running now, its settings and schedule, and its environment variables.
-- **Deployment history** lists the latest deployments of every item, and opens a build log when you select one.
-- **Deploy** deploys from a Git repository, or uploads a project folder with a `_ricochet.toml` the way `ricochet deploy` does.
-- **Credentials** lists your Git credentials.
+On Linux the app needs GTK 3 and WebKitGTK 4.1 from your distribution, such as `libwebkit2gtk-4.1-0` on Debian and Ubuntu or `webkit2gtk4.1` on Fedora.
+It runs on X11, through XWayland on a Wayland desktop.
 
-Apps and documents still open in your browser.
-
-Switch instances from the menu at the top of the window.
+Switch instances from the menu in the title bar.
 It lists this machine, the SSH hosts you connected to, and any other ricochet server you connected to by its address.
 **Connect another instance** connects to a running ricochet by its address, or installs ricochet on a machine instead, and **Manage instances** lets you rename, group and reorder the list.
-A server you connected to by address shows only its content, since the app doesn't manage it.
-Select **Sign in with your browser** to sign in the same way the ricochet CLI does, or paste an API key.
-Keys from the browser sign-in last eight hours.
+A server you connected to by address shows only its web UI, since the app doesn't manage it.
+For a machine the app manages, **Settings** in the title bar switches to its configuration and **Content** back to its web UI.
 
 ## Bring your own languages
 

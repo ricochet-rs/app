@@ -1,5 +1,5 @@
 mod components;
-mod dashboard;
+pub mod dashboard;
 pub mod icons;
 mod section;
 pub mod setup;

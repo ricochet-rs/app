@@ -1,14 +1,13 @@
-//! The ricochet servers whose content the app shows, and the API keys it signs in to them with.
+//! The ricochet servers whose web UI the app shows, and how you arranged them.
 
 use crate::connections::Connection;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// A ricochet server the dashboard can show.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Server {
-    /// What the store files the server's key under.
+    /// What the store files the server's name, group and place under.
     pub id: String,
     pub name: String,
     /// Where the server answers, as seen from this computer.
@@ -98,9 +97,6 @@ pub struct Servers {
     /// Servers you added by address.
     #[serde(default)]
     pub urls: Vec<String>,
-    /// API keys by server id.
-    #[serde(default)]
-    keys: BTreeMap<String, String>,
     /// The server shown when you last quit.
     #[serde(default)]
     pub active: Option<String>,
@@ -121,7 +117,7 @@ impl Servers {
             .unwrap_or_default()
     }
 
-    /// Writes the store readable only by you, since it holds API keys.
+    /// Writes the store readable only by you, since it lists the servers you use.
     pub fn save(&self) {
         let Some(file) = Self::file() else { return };
         if let Some(folder) = file.parent() {
@@ -137,17 +133,6 @@ impl Servers {
         if let Ok(mut out) = options.open(&file) {
             let _ = std::io::Write::write_all(&mut out, text.as_bytes());
         }
-    }
-
-    pub fn key(&self, server: &Server) -> Option<&str> {
-        self.keys.get(&server.id).map(String::as_str)
-    }
-
-    pub fn set_key(&mut self, server: &Server, key: Option<String>) {
-        match key {
-            Some(key) => self.keys.insert(server.id.clone(), key),
-            None => self.keys.remove(&server.id),
-        };
     }
 
     /// Adds a server by address and returns it, or the one already saved at that address.
@@ -238,16 +223,46 @@ impl Servers {
     pub fn remove(&mut self, server: &Server) {
         self.forget_placement(&server.id);
         self.urls.retain(|url| *url != server.id);
-        self.keys.remove(&server.id);
         if self.active.as_deref() == Some(&server.id) {
             self.active = None;
         }
     }
 }
 
+/// The address of a server as typed, with `https://` added when no scheme is given, or `None` when it isn't one.
+pub fn normalize_url(text: &str) -> Option<String> {
+    let text = text.trim();
+    let (scheme, rest) = text.split_once("://").unwrap_or(("https", text));
+    if !matches!(scheme, "http" | "https") {
+        return None;
+    }
+    let rest = rest.trim_end_matches('/');
+    let host = rest.split(['/', ':', '?', '#']).next()?;
+    let valid = !host.is_empty()
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '[' | ']'));
+    valid.then(|| format!("{scheme}://{rest}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn urls_gain_https_and_lose_trailing_slashes() {
+        assert_eq!(
+            normalize_url(" ricochet.example.com/ ").as_deref(),
+            Some("https://ricochet.example.com")
+        );
+        assert_eq!(
+            normalize_url("http://localhost:6188").as_deref(),
+            Some("http://localhost:6188")
+        );
+        assert_eq!(normalize_url("ftp://example.com"), None);
+        assert_eq!(normalize_url("https://"), None);
+        assert_eq!(normalize_url("not a host"), None);
+    }
 
     #[test]
     fn instances_keep_the_order_and_groups_you_give_them() {
@@ -277,23 +292,18 @@ mod tests {
     }
 
     #[test]
-    fn servers_are_added_once_and_keys_follow_their_id() {
+    fn servers_are_added_once() {
         let mut servers = Servers::default();
         let remote = servers.add("https://ricochet.example.com");
         servers.add("https://ricochet.example.com");
-        servers.set_key(&remote, Some("rico_1".into()));
-        let local = Server::managed(&Connection::Local, "http://localhost:6188".into());
         assert_eq!(servers.urls, ["https://ricochet.example.com"]);
         assert_eq!(remote.name, "ricochet.example.com");
-        assert_eq!(servers.key(&remote), Some("rico_1"));
-        assert_eq!(servers.key(&local), None);
     }
 
     #[test]
-    fn removing_a_server_forgets_its_key() {
+    fn removing_a_server_forgets_it() {
         let mut servers = Servers::default();
         let remote = servers.add("https://a.example.com");
-        servers.set_key(&remote, Some("rico_1".into()));
         servers.active = Some(remote.id.clone());
         servers.remove(&remote);
         assert_eq!(servers, Servers::default());

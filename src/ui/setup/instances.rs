@@ -3,7 +3,7 @@
 use super::{SetupView, Step};
 use crate::servers::{Instance, Servers};
 use crate::ui::components::{card, heading, prose};
-use crate::ui::dashboard::{InstanceChange, SHOWS_WEB_UI};
+use crate::ui::dashboard::InstanceChange;
 use crate::ui::icons::ph;
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, DismissEvent, Entity, Window, div, px};
@@ -51,10 +51,6 @@ impl SetupView {
         let sections = Servers::sections(arranged);
         let dashboard = self.dashboard.read(cx);
         let showing = dashboard.added_server();
-        // The web UI keeps its own sign-in, so only the native pages offer signing out here.
-        let signed_in = dashboard
-            .active_server(cx)
-            .filter(|server| !SHOWS_WEB_UI && dashboard.is_signed_in(server));
         let dashboard = self.dashboard.clone();
         let cover = self.dashboard.clone();
         let view = cx.entity();
@@ -123,16 +119,6 @@ impl SetupView {
                                 manage.update(cx, |this, cx| this.open_instances(window, cx))
                             }),
                     );
-                if let Some(server) = signed_in.clone() {
-                    let dashboard = dashboard.clone();
-                    menu = menu.item(
-                        PopupMenuItem::new(format!("Sign out of {}", server.name))
-                            .icon(ph("sign-in"))
-                            .on_click(move |_, _, cx| {
-                                dashboard.update(cx, |d, cx| d.sign_out(&server, cx))
-                            }),
-                    );
-                }
                 if let Some(server) = showing.clone() {
                     let dashboard = dashboard.clone();
                     menu = menu.item(

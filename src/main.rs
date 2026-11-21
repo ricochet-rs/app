@@ -1,15 +1,12 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-mod api;
 mod archive;
 mod assets;
 mod backend;
-mod bundle;
 mod command;
 mod config;
 mod connections;
 mod controller;
-mod crypto;
 mod error;
 mod paths;
 mod person;
@@ -31,6 +28,8 @@ use ui::setup::SetupView;
 actions!(ricochet, [Quit]);
 
 fn main() {
+    #[cfg(target_os = "linux")]
+    ui::dashboard::linux_webview::prepare();
     Application::new()
         .with_assets(assets::Assets)
         .run(|cx: &mut App| {

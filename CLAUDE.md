@@ -18,11 +18,9 @@ If authentication, synchronization, HEAD validation, or a required read fails, s
 The app is a simple way to install ricochet's Community Edition for local development, and to install and configure ricochet on remote Linux hosts over SSH.
 It builds for Apple Silicon macOS, x86_64 Linux and x86_64 Windows.
 Never write a `[backend]` section, because content runs as processes on the machine and Kubernetes and containers are out of scope.
-The **Content** page in `src/ui/dashboard.rs` shows a server's content natively in GPUI through ricochet's REST API, for the managed server and for any server added by address.
+The content area in `src/ui/dashboard/` shows a server's own web UI, for the managed server and for any server added by address.
 List managed machines and added servers in the one server menu of `SetupView`, and show settings only for a managed machine, so the window never has two switchers that both mean "which server".
 List only the machines you connected to in that menu, never every host in the SSH config, which only the add-machine step offers.
-Keep content items in the order ricochet sends them.
-Lay out the Content pages like ricochet's web UI, with a table for Apps and Tasks, a full-width item page with label and value pills, and the open page's sidebar row filled with the primary colour, so the app and the server look like one product.
 Offer OpenID Connect and Entra only: ricochet refuses a SAML assertion consumer URL that is not `https`, and the server here serves `http://localhost`.
 
 ## App
@@ -69,20 +67,16 @@ Set `HOME` inside ricochet's folder, and point `JULIAUP_DEPOT_PATH` and `UV_PYTH
 
 ## Content
 
-Show a server's own web UI in the system webview on macOS and Windows, through gpui-component's `webview` feature, so the app and the server share one UI; Linux keeps the native pages, because wry can't place WebKitGTK inside a Wayland window.
+Show a server's own web UI in the system webview through gpui-component's `webview` feature, WKWebView on macOS, WebView2 on Windows and WebKitGTK on Linux, so the app and the server share one UI and every page works through a browser session.
+Run the app on X11 on Linux, through XWayland under Wayland, and start GTK before GPUI in `linux_webview::prepare`, because wry embeds WebKitGTK only in an X11 window.
+Advance GTK's loop from a GPUI timer while the webview exists, because GPUI doesn't run it and WebKitGTK paints nothing without it.
+Hand wry an Xlib handle on Linux, because GPUI gives out an XCB one and wry accepts only Xlib; both name the same X window.
 Put the app's own controls, the server menu, the managed server's status and its actions, in the title bar beside the window buttons on macOS and Windows, and leave the rest of the window to the web UI.
 Hide the webview whenever something else must show over the content area, such as the server menu, because the system draws it above the GPUI window.
 Hand only `http` and `https` links from the webview to the browser, because content on the server can ask to open any URL.
-Call ricochet's REST API only through `src/api.rs`, with blocking `ureq` calls on GPUI's background executor, because the app has no async HTTP runtime.
-Sign in through `/oauth/authorize` with a loopback `redirect_uri`, the flow the CLI uses, because ricochet mints an API key only for a loopback callback.
-Put a random nonce in the callback path and use `127.0.0.1` in it, because ricochet echoes no `state`, and any page could otherwise hand the app its own key.
-Write `servers.json` readable only by its owner, because it holds API keys.
-Open a managed SSH server's tunnel through `Backend::reach_dashboard` before every API call, because the API answers on `localhost` only while the tunnel is up.
-Open apps and documents in the browser, because what ricochet serves is web content.
-Encrypt environment variables with RSA-OAEP-SHA256 under the key from `/api/v0/public-key`, as the CLI does, because ricochet rejects plain values.
-Bundle a folder with the CLI's rules in `src/bundle.rs`, the always-excluded folders and the `include` and `exclude` globs of `_ricochet.toml`, and also leave out `.git` and local secret files such as `.env` and `.Renviron`, because the CLI rules would upload them.
-Read logs as streamed text from `/api/v0/content/logs/{id}`, where an instance's id and a task run's id are also their log ids.
-Leave out a page that needs data the REST API doesn't serve, such as users or collaborators, because the web UI reads it through server functions that accept only a browser session.
+Keep the webview's cookies and storage in the app's data folder, because WebView2 can't write next to the program.
+Open a managed SSH server's tunnel through `Backend::reach_dashboard` before showing its web UI, because the server answers on `localhost` only while the tunnel is up.
+Link the AppImage against the system's GTK and WebKitGTK instead of bundling them, because WebKitGTK starts helper processes from fixed paths and needs the system's GLib.
 
 ## Uninstall
 

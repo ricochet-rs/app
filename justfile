@@ -86,6 +86,11 @@ appimage version="0.0.0":
         --executable target/release/ricochet-app \
         --desktop-file dist/ricochet.desktop \
         --icon-file dist/ricochet.png \
+        --exclude-library 'libwebkit2gtk-4.1*' --exclude-library 'libjavascriptcoregtk-4.1*' \
+        --exclude-library 'libgtk-3*' --exclude-library 'libgdk-3*' --exclude-library 'libgdk_pixbuf-2.0*' \
+        --exclude-library 'libsoup-3.0*' --exclude-library 'libglib-2.0*' --exclude-library 'libgobject-2.0*' \
+        --exclude-library 'libgio-2.0*' --exclude-library 'libgmodule-2.0*' --exclude-library 'libpango*' \
+        --exclude-library 'libcairo*' --exclude-library 'libharfbuzz*' --exclude-library 'libatk*' \
         --output appimage
     mv ricochet-*-x86_64.AppImage "dist/ricochet-{{ version }}-x86_64.AppImage"
 

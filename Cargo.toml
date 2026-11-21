@@ -5,20 +5,17 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.104"
-base64 = "0.22.1"
 chrono = "0.4.45"
 dirs = "7.0.0"
 flate2 = "1.1.11"
 futures = "0.3.34"
-getrandom = "0.3.4"
-globset = "0.4.18"
 gpui = { version = "0.2.2", features = ["runtime_shaders"] }
-gpui-component = "0.5.1"
+# The server's web UI runs in the system's webview: WKWebView on macOS, WebView2 on Windows and WebKitGTK on Linux.
+gpui-component = { version = "0.5.1", features = ["webview"] }
 gpui-component-assets = "0.5.1"
 # GPUI's HTTP client pulls in xattr 0.2.3, which reads libc::ENOATTR on Linux, and libc 0.2.190 removed it.
 libc = ">=0.2.182, <0.2.190"
 open = "5.4.5"
-rsa = { version = "0.9.10", features = ["sha2"] }
 rust-embed = "8"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
@@ -28,7 +25,6 @@ thiserror = "2.0.21"
 toml_edit = "0.25.19"
 trash = "5.3.0"
 ureq = "3.5.1"
-walkdir = "2.5.0"
 zip = { version = "9.4.1", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
@@ -37,10 +33,10 @@ tempfile = "3.27.0"
 [target.'cfg(target_os = "macos")'.dependencies]
 plist = "1.10.3"
 
-# The server's web UI runs in the system's webview: WKWebView on macOS and WebView2 on Windows.
-# Linux has none the app can embed in a Wayland window, so there it opens in the browser.
-[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
-gpui-component = { version = "0.5.1", features = ["webview"] }
+# WebKitGTK draws the web UI on Linux; wry embeds it only in an X11 window, so the app runs on X11 there.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+raw-window-handle = "0.6"
 
 # GPUI precompiles its Windows shaders with fxc.exe only when it builds on Windows, so the cross-compiled
 # Windows build keeps its debug assertions on, which makes GPUI compile those shaders at run time.
