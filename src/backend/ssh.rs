@@ -388,17 +388,18 @@ impl Backend for SshBackend {
                 .to_string_lossy(),
         );
         let url = sh_quote(&release.archive_url(target));
+        // The proxy can hold a password, so it reaches curl through stdin rather than a command line `ps` shows.
         let proxy: String = self
             .proxy
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .iter()
-            .map(|(name, value)| format!("export {name}={}; ", sh_quote(value)))
+            .map(|(name, value)| format!("{name}={}\n", sh_quote(value)))
             .collect();
         let script = format!(
-            "set -e; {proxy}tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT; curl -fsSL {url} -o \"$tmp/r.tar.gz\"; tar -xzf \"$tmp/r.tar.gz\" -C \"$tmp\" ricochet-server; mkdir -p {folder}; mv -f \"$tmp/ricochet-server\" {binary}.new; chmod 755 {binary}.new; mv -f {binary}.new {binary}"
+            "set -e; set -a; . /dev/stdin; set +a; tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT; curl -fsSL {url} -o \"$tmp/r.tar.gz\"; tar -xzf \"$tmp/r.tar.gz\" -C \"$tmp\" ricochet-server; mkdir -p {folder}; mv -f \"$tmp/ricochet-server\" {binary}.new; chmod 755 {binary}.new; mv -f {binary}.new {binary}"
         );
-        let result = self.shell.run("sh", &["-c", &script])?;
+        let result = self.shell.script(&script, Some(proxy.as_bytes()))?;
         if result.success {
             Ok(())
         } else {

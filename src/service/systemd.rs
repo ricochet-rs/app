@@ -100,7 +100,8 @@ impl Service for UserUnit {
         {
             return Ok(false);
         }
-        self.shell.write(&file, contents.as_bytes(), false)?;
+        // Readable by its owner only, because a proxy in its environment can hold a password.
+        self.shell.write(&file, contents.as_bytes(), true)?;
         self.checked(&["daemon-reload"])?;
         Ok(true)
     }

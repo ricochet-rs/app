@@ -149,6 +149,11 @@ impl Service for LaunchAgent {
         }
         let staging = file.with_extension("plist.tmp");
         std::fs::write(&staging, data)?;
+        // Readable by you only, because a proxy in the job's environment can hold a password.
+        std::fs::set_permissions(
+            &staging,
+            std::os::unix::fs::PermissionsExt::from_mode(0o600),
+        )?;
         std::fs::rename(&staging, &file)?;
         Ok(true)
     }

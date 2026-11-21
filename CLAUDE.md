@@ -54,6 +54,7 @@ Sort R repositories by name when saving, because ricochet reads them in name ord
 Keep each managed machine's proxy in `[desktop.proxy]` of its `ricochet-config.toml`, a table ricochet ignores, because ricochet has no proxy setting and a remote host can sit behind a different proxy than this computer.
 Write nothing for the system choice, so a config without the table follows the machine's own settings.
 Give ricochet's service `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` in both cases, through the launchd job, the systemd unit or the Windows launcher's `--env` arguments, because launchd, systemd and the `Run` entry start it without the proxy variables of a shell, and R, Python and Git read them from the environment.
+Keep the proxy out of command lines and world-readable files, because its URL can hold a password: write the launchd job and the systemd unit readable by their owner only, and hand it to a remote install through stdin.
 Always put `localhost`, `127.0.0.1` and `::1` in `NO_PROXY`, and reach ricochet's health check without a proxy, because the app and ricochet talk to each other on this machine.
 Read the system proxy from `scutil --proxy` on macOS, the `Internet Settings` registry key on Windows, and `HTTPS_PROXY` elsewhere, including a login shell on an SSH host; PAC files aren't read.
 Send the app's own downloads through `net::download`, which uses the local machine's choice, and leave the webview on the operating system's proxy, which already handles PAC.
