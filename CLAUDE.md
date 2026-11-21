@@ -70,6 +70,7 @@ Set `HOME` inside ricochet's folder, and point `JULIAUP_DEPOT_PATH` and `UV_PYTH
 ## Content
 
 Show a server's own web UI in the system webview on macOS and Windows, through gpui-component's `webview` feature, so the app and the server share one UI; Linux keeps the native pages, because wry can't place WebKitGTK inside a Wayland window.
+Put the app's own controls, the server menu, the managed server's status and its actions, in the title bar beside the window buttons on macOS and Windows, and leave the rest of the window to the web UI.
 Hide the webview whenever something else must show over the content area, such as the server menu, because the system draws it above the GPUI window.
 Hand only `http` and `https` links from the webview to the browser, because content on the server can ask to open any URL.
 Call ricochet's REST API only through `src/api.rs`, with blocking `ureq` calls on GPUI's background executor, because the app has no async HTTP runtime.

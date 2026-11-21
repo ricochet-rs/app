@@ -3,7 +3,7 @@
 use super::{SetupView, Step};
 use crate::servers::{Instance, Servers};
 use crate::ui::components::{card, heading, prose};
-use crate::ui::dashboard::InstanceChange;
+use crate::ui::dashboard::{InstanceChange, SHOWS_WEB_UI};
 use crate::ui::icons::ph;
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, DismissEvent, Entity, Window, div, px};
@@ -51,9 +51,10 @@ impl SetupView {
         let sections = Servers::sections(arranged);
         let dashboard = self.dashboard.read(cx);
         let showing = dashboard.added_server();
+        // The web UI keeps its own sign-in, so only the native pages offer signing out here.
         let signed_in = dashboard
             .active_server(cx)
-            .filter(|server| dashboard.is_signed_in(server));
+            .filter(|server| !SHOWS_WEB_UI && dashboard.is_signed_in(server));
         let dashboard = self.dashboard.clone();
         let cover = self.dashboard.clone();
         let view = cx.entity();
@@ -61,8 +62,9 @@ impl SetupView {
         Button::new("connection")
             .icon(ph(icon))
             .label(name)
-            .outline()
-            .small()
+            .ghost()
+            .xsmall()
+            .dropdown_caret(true)
             .disabled(busy)
             .dropdown_menu(move |menu, _, cx| {
                 let mut menu = menu;

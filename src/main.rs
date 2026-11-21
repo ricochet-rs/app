@@ -56,6 +56,18 @@ fn main() {
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 window_min_size: Some(size(px(860.0), px(560.0))),
+                // On macOS and Windows the app draws its own title bar, with its controls beside the window buttons.
+                titlebar: if cfg!(any(target_os = "macos", target_os = "windows")) {
+                    Some(gpui::TitlebarOptions {
+                        title: Some("ricochet".into()),
+                        ..gpui_component::TitleBar::title_bar_options()
+                    })
+                } else {
+                    Some(gpui::TitlebarOptions {
+                        title: Some("ricochet".into()),
+                        ..Default::default()
+                    })
+                },
                 ..Default::default()
             };
             cx.open_window(options, |window, cx| {

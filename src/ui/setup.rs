@@ -21,6 +21,7 @@ use gpui::{
     AnyElement, App, ClipboardItem, Context, Div, Entity, FontWeight, ScrollHandle, Subscription,
     Window, div, px,
 };
+use gpui_component::TitleBar;
 use gpui_component::button::{Button, ButtonVariant, ButtonVariants};
 use gpui_component::dialog::DialogButtonProps;
 use gpui_component::input::{Input, InputEvent, InputState};
@@ -679,53 +680,32 @@ impl SetupView {
 
     // MARK: Controls
 
+    /// The app's own controls in the title bar: the server menu, the managed server's status and the actions on it.
     fn controls(&self, cx: &mut Context<Self>) -> Div {
-        if let Some(added) = self.dashboard.read(cx).added_server() {
-            let url = added.url.clone();
-            return h_flex()
-                .gap_3()
-                .px_4()
-                .py_3()
-                .items_center()
-                .child(
-                    v_flex()
-                        .gap_0p5()
-                        .child(
-                            div()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .child(prose("ricochet")),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(added.url.clone()),
-                        ),
-                )
-                .child(self.machine_menu(cx))
-                .child(div().flex_1())
-                .child(open_in_browser(url, false));
+        let bar = h_flex()
+            .flex_1()
+            .h_full()
+            .gap_2()
+            .items_center()
+            .child(self.machine_menu(cx));
+        if self.dashboard.read(cx).added_server().is_some() {
+            return bar;
         }
         let server = self.server.read(cx);
         let busy = server.activity.is_some();
+        let checking = server.checking;
         let (label, color) = match server.status {
+            _ if checking => ("Checking", cx.theme().muted_foreground),
             ServerStatus::Running => ("Running", cx.theme().success),
             ServerStatus::Starting => ("Starting", cx.theme().warning),
             ServerStatus::Stopped => ("Stopped", cx.theme().muted_foreground),
             ServerStatus::NotInstalled => ("Not installed", cx.theme().muted_foreground),
         };
-        let checking = server.checking;
-        let (label, version) = if checking {
-            ("Checking", "\u{a0}".to_owned())
-        } else {
-            let version = server
-                .installed
-                .as_ref()
-                .map_or("\u{a0}".to_owned(), |release| {
-                    format!("Version {}", release.version)
-                });
-            (label, version)
-        };
+        let version = server
+            .installed
+            .as_ref()
+            .filter(|_| !checking)
+            .map(|release| release.version.to_string());
         let marker = if checking || busy {
             gpui_component::spinner::Spinner::new()
                 .xsmall()
@@ -737,111 +717,79 @@ impl SetupView {
                 .bg(color)
                 .into_any_element()
         };
-        let (running, stopped, configured) = (
-            server.status == ServerStatus::Running,
-            server.status == ServerStatus::Stopped,
-            server.is_configured,
-        );
+        let (stopped, configured) = (server.status == ServerStatus::Stopped, server.is_configured);
+        let running = server.status == ServerStatus::Running;
         let update = server.available_update();
-        let dashboard_url = server.dashboard();
         let server_entity = self.server.clone();
         let act = move |f: fn(&mut ServerController, &mut Context<ServerController>)| {
             let server = server_entity.clone();
             move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut App| server.update(cx, f)
         };
-
-        h_flex()
-            .gap_3()
-            .px_4()
-            .py_3()
-            .items_center()
-            .child(
-                v_flex()
-                    .gap_0p5()
-                    .child(
-                        div()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(prose("ricochet")),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(version),
-                    ),
-            )
-            .child(
-                h_flex()
-                    .gap_1p5()
-                    .px_2()
-                    .py_0p5()
-                    .items_center()
-                    .border_1()
-                    .border_color(cx.theme().border)
-                    .text_xs()
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(marker)
-                    .child(label),
-            )
-            .child(self.machine_menu(cx))
-            .child(div().flex_1())
-            .children(update.map(|release| {
-                let server = self.server.clone();
-                Button::new("update")
-                    .icon(ph("arrow-circle-up"))
-                    .label(format!("Update to {}", release.version))
-                    .outline()
-                    .small()
-                    .disabled(busy)
-                    .on_click(move |_, _, cx| {
-                        server.update(cx, |server, cx| server.update_to(release.clone(), cx))
-                    })
-            }))
-            .when(configured && !SHOWS_WEB_UI, |row| {
-                row.child(
-                    Button::new("open")
-                        .icon(ph("squares-four"))
-                        .label("Open")
-                        .primary()
-                        .small()
-                        .disabled(!running || busy)
-                        .on_click(cx.listener(|this, _, _, cx| this.show_content(cx))),
-                )
-            })
-            .when(configured && SHOWS_WEB_UI, |row| {
-                row.child(self.view_switch(cx))
-            })
-            .when(configured, |row| {
-                row.child(if stopped {
-                    Button::new("start")
-                        .icon(ph("play"))
-                        .tooltip("Start")
-                        .outline()
-                        .small()
-                        .disabled(busy)
-                        .on_click(act(|s, cx| s.start(cx)))
-                } else {
-                    Button::new("stop")
-                        .icon(ph("stop"))
-                        .tooltip("Stop")
-                        .outline()
-                        .small()
-                        .disabled(busy)
-                        .on_click(act(|s, cx| s.stop(cx)))
+        let muted = cx.theme().muted_foreground;
+        bar.child(
+            h_flex()
+                .gap_1p5()
+                .items_center()
+                .text_xs()
+                .child(marker)
+                .child(div().font_weight(FontWeight::MEDIUM).child(label))
+                .children(version.map(|version| div().text_color(muted).child(version))),
+        )
+        .child(div().flex_1())
+        .children(update.map(|release| {
+            let server = self.server.clone();
+            Button::new("update")
+                .icon(ph("arrow-circle-up"))
+                .label(format!("Update to {}", release.version))
+                .outline()
+                .xsmall()
+                .disabled(busy)
+                .on_click(move |_, _, cx| {
+                    server.update(cx, |server, cx| server.update_to(release.clone(), cx))
                 })
-                .child(
-                    Button::new("restart")
-                        .icon(ph("arrow-clockwise"))
-                        .tooltip("Restart")
-                        .outline()
-                        .small()
-                        .disabled(stopped || busy)
-                        .on_click(act(|s, cx| s.restart(cx))),
-                )
+        }))
+        .when(configured && !SHOWS_WEB_UI, |row| {
+            row.child(
+                Button::new("open")
+                    .icon(ph("squares-four"))
+                    .label("Open")
+                    .primary()
+                    .xsmall()
+                    .disabled(!running || busy)
+                    .on_click(cx.listener(|this, _, _, cx| this.show_content(cx))),
+            )
+        })
+        .when(configured && SHOWS_WEB_UI, |row| {
+            row.child(self.view_switch(cx))
+        })
+        .when(configured, |row| {
+            row.child(if stopped {
+                Button::new("start")
+                    .icon(ph("play"))
+                    .tooltip("Start")
+                    .ghost()
+                    .xsmall()
+                    .disabled(busy)
+                    .on_click(act(|s, cx| s.start(cx)))
+            } else {
+                Button::new("stop")
+                    .icon(ph("stop"))
+                    .tooltip("Stop")
+                    .ghost()
+                    .xsmall()
+                    .disabled(busy)
+                    .on_click(act(|s, cx| s.stop(cx)))
             })
-            .when(configured && SHOWS_WEB_UI, |row| {
-                row.child(open_in_browser(dashboard_url.clone(), !running))
-            })
+            .child(
+                Button::new("restart")
+                    .icon(ph("arrow-clockwise"))
+                    .tooltip("Restart")
+                    .ghost()
+                    .xsmall()
+                    .disabled(stopped || busy)
+                    .on_click(act(|s, cx| s.restart(cx))),
+            )
+        })
     }
 
     /// Switches the window between the server's web UI and the settings of the machine it runs on.
@@ -2472,20 +2420,30 @@ impl Render for SetupView {
             self.dashboard
                 .update(cx, |dashboard, cx| dashboard.hide_web(cx));
         }
-        if let Some(step) = self.onboarding {
-            return self.onboarding_view(step, cx);
-        }
-        if self.server.read(cx).loading && self.dashboard.read(cx).added_server().is_none() {
-            return self.connecting_view(cx);
-        }
-        self.viewport_height = window.viewport_size().height;
-
+        let connecting = self.server.read(cx).loading && !added;
+        let controls = (self.onboarding.is_none() && !connecting).then(|| self.controls(cx));
+        let body = if let Some(step) = self.onboarding {
+            self.onboarding_view(step, cx)
+        } else if connecting {
+            self.connecting_view(cx)
+        } else {
+            self.workspace(window, cx)
+        };
         v_flex()
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .child(self.controls(cx))
-            .child(rule(cx))
+            .child(title_bar(controls, cx))
+            .child(v_flex().flex_1().min_h_0().child(body))
+    }
+}
+
+impl SetupView {
+    /// The sidebar and pane, or the server's content, below the title bar.
+    fn workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        self.viewport_height = window.viewport_size().height;
+        v_flex()
+            .size_full()
             .child(h_flex().flex_1().min_h_0().map(|body| {
                 if self.instance_inputs.is_some() {
                     body.child(self.instances_page(cx))
@@ -2512,15 +2470,19 @@ impl Render for SetupView {
     }
 }
 
-/// Opens the server's web UI in the browser, for a second window or to share its address.
-fn open_in_browser(url: String, disabled: bool) -> Button {
-    Button::new("open-in-browser")
-        .icon(ph("arrow-square-out"))
-        .tooltip("Open in browser")
-        .outline()
-        .small()
-        .disabled(disabled)
-        .on_click(move |_, _, _| {
-            let _ = open::that(&url);
-        })
+/// The window's title bar with the app's controls beside the window buttons, on macOS and Windows,
+/// where the window has no title bar of its own; on Linux the desktop draws one, so the controls go below it.
+fn title_bar(controls: Option<Div>, cx: &App) -> AnyElement {
+    let controls = controls.unwrap_or_else(div);
+    if cfg!(any(target_os = "macos", target_os = "windows")) {
+        TitleBar::new().pr_2().child(controls).into_any_element()
+    } else {
+        h_flex()
+            .h(px(40.0))
+            .px_3()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .child(controls)
+            .into_any_element()
+    }
 }
