@@ -175,7 +175,7 @@ impl SetupView {
         cx.notify();
     }
 
-    fn open_instances(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_instances(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut inputs = InstanceInputs::new();
         self.instance_subscriptions.clear();
         for (instance, placement) in self.arranged(cx) {

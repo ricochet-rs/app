@@ -82,9 +82,11 @@ fn main() {
                 let server = cx.new(ServerController::new);
                 let view = cx.new(|cx| SetupView::new(server, window, cx));
                 // The shortcut and the menu item reach the window wherever the focus is.
-                let settings = view.downgrade();
+                let (settings, handle) = (view.downgrade(), window.window_handle());
                 cx.on_action(move |_: &ToggleSettings, cx| {
-                    let _ = settings.update(cx, |view, cx| view.toggle_settings(cx));
+                    let _ = handle.update(cx, |_, window, cx| {
+                        settings.update(cx, |view, cx| view.toggle_settings(window, cx))
+                    });
                 });
                 cx.new(|cx| Root::new(view, window, cx))
             })

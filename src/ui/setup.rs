@@ -705,7 +705,7 @@ impl SetupView {
                     })
             }));
         if self.dashboard.read(cx).added_server().is_some() {
-            return bar;
+            return bar.child(div().flex_1()).child(self.settings_button(cx));
         }
         let server = self.server.read(cx);
         let busy = server.activity.is_some();
@@ -801,20 +801,24 @@ impl SetupView {
         reachable.then_some(server.url)
     }
 
-    /// Whether the window has settings to show: the managed machine's, once ricochet is set up there.
+    /// Whether the instance shown has settings in this app: a managed machine, once ricochet is set up there.
     fn has_settings(&self, cx: &App) -> bool {
-        self.onboarding.is_none()
-            && self.instance_inputs.is_none()
-            && self.dashboard.read(cx).added_server().is_none()
-            && self.server.read(cx).is_configured
+        self.dashboard.read(cx).added_server().is_none() && self.server.read(cx).is_configured
     }
 
     /// Opens the settings of the machine shown, or closes them again, as ⌘, does in a Mac app.
-    pub fn toggle_settings(&mut self, cx: &mut Context<Self>) {
-        if !self.has_settings(cx) {
+    /// An instance without settings of its own, such as a server added by address, opens Manage instances instead.
+    pub fn toggle_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.onboarding.is_some() {
             return;
         }
-        if self.showing_content {
+        if self.instance_inputs.is_some() {
+            self.instance_inputs = None;
+            self.instance_subscriptions.clear();
+            cx.notify();
+        } else if !self.has_settings(cx) {
+            self.open_instances(window, cx);
+        } else if self.showing_content {
             self.select(self.section, cx);
         } else {
             self.show_content(cx);
@@ -828,7 +832,9 @@ impl SetupView {
         } else {
             "Ctrl+,"
         };
-        let button = if self.showing_content {
+        let open =
+            self.instance_inputs.is_some() || (!self.showing_content && self.has_settings(cx));
+        let button = if !open {
             Button::new("settings")
                 .icon(ph("sliders-horizontal"))
                 .tooltip(format!("Settings ({shortcut})"))
@@ -841,7 +847,7 @@ impl SetupView {
         };
         button
             .xsmall()
-            .on_click(cx.listener(|this, _, _, cx| this.toggle_settings(cx)))
+            .on_click(cx.listener(|this, _, window, cx| this.toggle_settings(window, cx)))
     }
 
     // MARK: Sidebar
