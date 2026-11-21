@@ -704,16 +704,7 @@ impl SetupView {
                 )
                 .child(self.machine_menu(cx))
                 .child(div().flex_1())
-                .child(
-                    Button::new("open-in-browser")
-                        .icon(ph("arrow-square-out"))
-                        .label("Open in browser")
-                        .outline()
-                        .small()
-                        .on_click(move |_, _, _| {
-                            let _ = open::that(&url);
-                        }),
-                );
+                .child(open_in_browser(url, false));
         }
         let server = self.server.read(cx);
         let busy = server.activity.is_some();
@@ -752,6 +743,7 @@ impl SetupView {
             server.is_configured,
         );
         let update = server.available_update();
+        let dashboard_url = server.dashboard();
         let server_entity = self.server.clone();
         let act = move |f: fn(&mut ServerController, &mut Context<ServerController>)| {
             let server = server_entity.clone();
@@ -805,7 +797,7 @@ impl SetupView {
                         server.update(cx, |server, cx| server.update_to(release.clone(), cx))
                     })
             }))
-            .when(configured, |row| {
+            .when(configured && !SHOWS_WEB_UI, |row| {
                 row.child(
                     Button::new("open")
                         .icon(ph("squares-four"))
@@ -815,7 +807,12 @@ impl SetupView {
                         .disabled(!running || busy)
                         .on_click(cx.listener(|this, _, _, cx| this.show_content(cx))),
                 )
-                .child(if stopped {
+            })
+            .when(configured && SHOWS_WEB_UI, |row| {
+                row.child(self.view_switch(cx))
+            })
+            .when(configured, |row| {
+                row.child(if stopped {
                     Button::new("start")
                         .icon(ph("play"))
                         .tooltip("Start")
@@ -842,6 +839,36 @@ impl SetupView {
                         .on_click(act(|s, cx| s.restart(cx))),
                 )
             })
+            .when(configured && SHOWS_WEB_UI, |row| {
+                row.child(open_in_browser(dashboard_url.clone(), !running))
+            })
+    }
+
+    /// Switches the window between the server's web UI and the settings of the machine it runs on.
+    fn view_switch(&self, cx: &mut Context<Self>) -> Div {
+        let showing = self.showing_content;
+        let tab = |id: &'static str, icon: &'static str, label: &'static str, active: bool| {
+            let button = Button::new(id).icon(ph(icon)).label(label).small();
+            if active {
+                button.primary()
+            } else {
+                button.outline()
+            }
+        };
+        h_flex()
+            .child(
+                tab("view-content", "squares-four", "Content", showing)
+                    .on_click(cx.listener(|this, _, _, cx| this.show_content(cx))),
+            )
+            .child(
+                tab("view-settings", "sliders-horizontal", "Settings", !showing).on_click(
+                    cx.listener(|this, _, _, cx| {
+                        if this.showing_content {
+                            this.select(this.section, cx);
+                        }
+                    }),
+                ),
+            )
     }
 
     // MARK: Sidebar
@@ -963,17 +990,7 @@ impl SetupView {
         });
         let shown_page = self.dashboard.read(cx).page();
         let pages: Vec<_> = if SHOWS_WEB_UI {
-            vec![
-                self.sidebar_row(
-                    "content",
-                    "squares-four",
-                    "Content",
-                    self.showing_content,
-                    false,
-                    cx,
-                )
-                .on_click(cx.listener(|this, _, _, cx| this.show_content(cx))),
-            ]
+            Vec::new()
         } else {
             Page::ALL
                 .into_iter()
@@ -1001,7 +1018,9 @@ impl SetupView {
             .text_color(cx.theme().sidebar_foreground)
             .border_r_1()
             .border_color(cx.theme().sidebar_border)
-            .child(group_label("Content"))
+            .when(!SHOWS_WEB_UI, |sidebar| {
+                sidebar.child(group_label("Content"))
+            })
             .children(pages);
         if self.dashboard.read(cx).added_server().is_some() {
             return sidebar;
@@ -2470,6 +2489,8 @@ impl Render for SetupView {
             .child(h_flex().flex_1().min_h_0().map(|body| {
                 if self.instance_inputs.is_some() {
                     body.child(self.instances_page(cx))
+                } else if SHOWS_WEB_UI && self.showing_content {
+                    body.child(self.detail(cx))
                 } else {
                     body.child(self.sidebar(cx)).child(self.detail(cx))
                 }
@@ -2489,4 +2510,17 @@ impl Render for SetupView {
             .children(Root::render_dialog_layer(window, cx))
             .into_any_element()
     }
+}
+
+/// Opens the server's web UI in the browser, for a second window or to share its address.
+fn open_in_browser(url: String, disabled: bool) -> Button {
+    Button::new("open-in-browser")
+        .icon(ph("arrow-square-out"))
+        .tooltip("Open in browser")
+        .outline()
+        .small()
+        .disabled(disabled)
+        .on_click(move |_, _, _| {
+            let _ = open::that(&url);
+        })
 }

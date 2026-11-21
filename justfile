@@ -22,6 +22,10 @@ lint:
 test:
     cargo test
 
+# Sample the CPU, energy impact and memory of the app and its web UI on macOS
+energy seconds="60" label="sample":
+    scripts/energy.sh {{seconds}} {{label}}
+
 # Download the renv tarball the macOS and Windows builds ship, into dist/
 renv:
     #!/usr/bin/env bash
