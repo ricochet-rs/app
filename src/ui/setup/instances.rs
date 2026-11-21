@@ -52,7 +52,6 @@ impl SetupView {
         let dashboard = self.dashboard.read(cx);
         let showing = dashboard.added_server();
         let in_browser = self.browser_url(cx);
-        let shown_name = name.clone();
         let dashboard = self.dashboard.clone();
         let cover = self.dashboard.clone();
         let view = cx.entity();
@@ -78,6 +77,7 @@ impl SetupView {
                     uncover.update(cx, |dashboard, cx| dashboard.set_covered(false, cx));
                 })
                 .detach();
+                let mut opened: usize = 0;
                 for (index, (group, entries)) in sections.iter().enumerate() {
                     if index > 0 {
                         menu = menu.separator();
@@ -88,13 +88,38 @@ impl SetupView {
                     for (instance, placement) in entries {
                         let target = instance.clone();
                         let view = view.clone();
+                        let label = placement
+                            .name
+                            .clone()
+                            .unwrap_or_else(|| instance.default_name());
+                        // An added server opens at its address; a machine only while it is the one shown and reachable.
+                        let url = match instance {
+                            Instance::Added(server) => Some(server.url.clone()),
+                            Instance::Machine(_) if *instance == shown => in_browser.clone(),
+                            Instance::Machine(_) => None,
+                        };
+                        let button_id = ("open-instance", opened);
+                        opened += 1;
                         menu = menu.item(
-                            PopupMenuItem::new(
-                                placement
-                                    .name
-                                    .clone()
-                                    .unwrap_or_else(|| instance.default_name()),
-                            )
+                            PopupMenuItem::element(move |_, cx| {
+                                h_flex()
+                                    .w_full()
+                                    .gap_3()
+                                    .items_center()
+                                    .child(div().flex_1().truncate().child(label.clone()))
+                                    .children(url.clone().map(|url| {
+                                        Button::new(button_id)
+                                            .icon(ph("arrow-square-out"))
+                                            .tooltip("Open in browser")
+                                            .ghost()
+                                            .xsmall()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .on_click(move |_, _, cx| {
+                                                cx.stop_propagation();
+                                                let _ = open::that(&url);
+                                            })
+                                    }))
+                            })
                             .icon(ph(instance.icon()))
                             .checked(*instance == shown)
                             .on_click(move |_, _, cx| {
@@ -105,15 +130,6 @@ impl SetupView {
                     }
                 }
                 let (connect, manage) = (view.clone(), view.clone());
-                if let Some(url) = in_browser.clone() {
-                    menu = menu.separator().item(
-                        PopupMenuItem::new(format!("Open {shown_name} in browser"))
-                            .icon(ph("arrow-square-out"))
-                            .on_click(move |_, _, _| {
-                                let _ = open::that(&url);
-                            }),
-                    );
-                }
                 menu = menu
                     .separator()
                     .item(
