@@ -51,6 +51,8 @@ impl SetupView {
         let sections = Servers::sections(arranged);
         let dashboard = self.dashboard.read(cx);
         let showing = dashboard.added_server();
+        let in_browser = self.browser_url(cx);
+        let shown_name = name.clone();
         let dashboard = self.dashboard.clone();
         let cover = self.dashboard.clone();
         let view = cx.entity();
@@ -103,6 +105,15 @@ impl SetupView {
                     }
                 }
                 let (connect, manage) = (view.clone(), view.clone());
+                if let Some(url) = in_browser.clone() {
+                    menu = menu.separator().item(
+                        PopupMenuItem::new(format!("Open {shown_name} in browser"))
+                            .icon(ph("arrow-square-out"))
+                            .on_click(move |_, _, _| {
+                                let _ = open::that(&url);
+                            }),
+                    );
+                }
                 menu = menu
                     .separator()
                     .item(

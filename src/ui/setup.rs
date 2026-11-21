@@ -681,7 +681,17 @@ impl SetupView {
             .h_full()
             .gap_2()
             .items_center()
-            .child(self.machine_menu(cx));
+            .child(self.machine_menu(cx))
+            .children(self.browser_url(cx).map(|url| {
+                Button::new("open-in-browser")
+                    .icon(ph("arrow-square-out"))
+                    .tooltip("Open in browser")
+                    .ghost()
+                    .xsmall()
+                    .on_click(move |_, _, _| {
+                        let _ = open::that(&url);
+                    })
+            }));
         if self.dashboard.read(cx).added_server().is_some() {
             return bar;
         }
@@ -770,6 +780,13 @@ impl SetupView {
                     .on_click(act(|s, cx| s.restart(cx))),
             )
         })
+    }
+
+    /// The address of the instance shown, when its web UI can open in the browser.
+    pub(super) fn browser_url(&self, cx: &App) -> Option<String> {
+        let server = self.dashboard.read(cx).active_server(cx)?;
+        let reachable = !server.managed || self.server.read(cx).status == ServerStatus::Running;
+        reachable.then_some(server.url)
     }
 
     /// Switches the window between the server's web UI and the settings of the machine it runs on.
