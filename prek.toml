@@ -56,14 +56,12 @@ entry = "typos"
 language = "system"
 pass_filenames = false
 
-# GitHub Actions also reads .yaml, but mac.yml is referenced by name, so it keeps its extension.
 [[repos.hooks]]
 id = "yaml-file-extension"
 name = "Check if YAML files has *.yaml extension."
 entry = "YAML filenames must have .yaml extension."
 language = "fail"
 files = "\\.yml$"
-exclude = "^\\.github/workflows/mac\\.yml$"
 
 [[repos.hooks]]
 id = "cargo-fmt"

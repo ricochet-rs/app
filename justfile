@@ -68,11 +68,21 @@ app version="0.0.0": renv
 dmg version="0.0.0": (app version)
     #!/usr/bin/env bash
     set -euo pipefail
+    dmg="dist/ricochet-{{ version }}.dmg"
     stage=$(mktemp -d)
     trap 'rm -rf "$stage"' EXIT
-    cp -R dist/ricochet.app "$stage/"
-    ln -s /Applications "$stage/Applications"
-    hdiutil create -volname ricochet -srcfolder "$stage" -ov -format UDZO "dist/ricochet-{{ version }}.dmg"
+    mkdir "$stage/volume" "$stage/readback"
+    cp -R dist/ricochet.app "$stage/volume/"
+    ln -s /Applications "$stage/volume/Applications"
+    # bsdtar writes the volume as a file, because `hdiutil create -srcfolder` attaches a disk image to fill it, which Crow's Mac sandbox denies.
+    # Rock Ridge carries the shortcut and, with `strict`, the file modes as they are; its default drops write permission, and a copied app could not be deleted.
+    bsdtar -cf "$stage/volume.iso" --format iso9660 --options 'iso9660:volume-id=ricochet,iso9660:rockridge=strict' -C "$stage/volume" .
+    hdiutil convert "$stage/volume.iso" -format UDZO -ov -o "$dmg"
+    # Read the app back out of the image, because ISO 9660 keeps no extended attributes and that sandbox cannot mount the image to look.
+    hdiutil convert "$dmg" -format UDTO -o "$stage/image"
+    bsdtar -xf "$stage/image.cdr" -C "$stage/readback"
+    diff -r dist/ricochet.app "$stage/readback/ricochet.app"
+    codesign --verify --deep --strict "$stage/readback/ricochet.app"
 
 # Package dist/ricochet-<version>-x86_64.AppImage with linuxdeploy, which bundles every library but glibc and the GPU drivers
 appimage version="0.0.0":
