@@ -22,6 +22,8 @@ pub enum AppError {
     Connection(String),
     #[error("{}", did_not_start(.0))]
     DidNotStart(String),
+    #[error("{0}")]
+    Update(String),
     #[error("ricochet has no server build for this machine yet.")]
     UnsupportedPlatform,
     #[error("{0}")]

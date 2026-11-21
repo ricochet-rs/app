@@ -100,6 +100,13 @@ Move what uninstall removes to the Trash on macOS and the Recycle Bin on Windows
 Keep the app itself on uninstall; it returns to the setup state so you can install ricochet again.
 Leave juliaup's Julia installs and uv's Pythons alone, because the person installed those, not the app.
 
+## Updates
+
+The app updates itself from the latest GitHub release of `ricochet-rs/app`, so keep the release file names in the `justfile` equal to the ones `asset_name` in `src/updater.rs` looks for.
+Build releases through `just`, which sets `RICOCHET_APP_VERSION` from the tag; a build without it reports `0.0.0` and never checks for updates.
+Update only an installed copy: the `.app` on macOS, the file in `APPIMAGE` on Linux, and the folder the app runs from on Windows.
+Leave the running ricochet server alone during an app update, because it runs from the launcher copied into the app's support folder, not from the `.app`.
+
 ## renv
 
 Keep `renv_version` in the `justfile` equal to `RENV_VERSION` in ricochet's `utils/vendor-versions.sh`.
@@ -115,6 +122,7 @@ The repository is private, so every run of `mac.yml` bills macOS minutes; it run
 Build the AppImage on Debian bookworm, the oldest Debian that still gets security updates, because the glibc it links against sets the oldest distribution it runs on.
 Start a script in a Debian container with `set -eu`, never `-o pipefail`, because Crow runs it with dash.
 Cross-compile Windows with cargo-xwin and the `windows` Cargo profile, because no Windows agent exists and GPUI precompiles its Windows shaders only when it builds on Windows; that profile keeps GPUI's debug assertions on, which makes it compile them at run time.
+Run `just lint-windows` beside `just lint`, in `test.yaml` too, because the Linux and macOS lints never compile the Windows-only code.
 Keep `linux.yaml` and `windows.yaml` depending on `release`, because `gh release upload` needs the release `release.yaml` creates.
 Write Crow metadata in brace form (`${CI_COMMIT_TAG}`) and shell-local variables bare or with `$$`, because Crow expands `${...}` before the shell runs, as ricochet's root `CLAUDE.md` explains.
 Make every release step safe to restart: edit the release when it exists, and replace an artifact a previous run uploaded, with `gh release upload --clobber`.

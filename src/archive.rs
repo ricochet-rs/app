@@ -18,7 +18,7 @@ fn from_tar_gz(archive: &[u8], member: &str) -> Option<Vec<u8>> {
 }
 
 /// The bytes of `member` in a `.zip` archive, or `None` when it isn't there.
-fn from_zip(archive: &[u8], member: &str) -> Option<Vec<u8>> {
+pub fn from_zip(archive: &[u8], member: &str) -> Option<Vec<u8>> {
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(archive)).ok()?;
     let mut entry = zip.by_name(member).ok()?;
     let mut bytes = Vec::new();
@@ -26,18 +26,25 @@ fn from_zip(archive: &[u8], member: &str) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
-/// Downloads the `.tar.gz` or `.zip` at `url` and installs the executable `member` from it at `destination`.
-pub fn install_executable(member: &str, url: &str, destination: &Path, name: &str) -> Result<()> {
+/// The bytes at `url`, where `name` says what they are in the error shown when the download fails.
+pub fn download(url: &str, name: &str) -> Result<Vec<u8>> {
     let fail = || AppError::Download(name.to_owned());
     let mut response = crate::net::download(url, Duration::from_secs(600))
         .call()
         .map_err(|_| fail())?;
-    let mut archive = Vec::new();
+    let mut bytes = Vec::new();
     response
         .body_mut()
         .as_reader()
-        .read_to_end(&mut archive)
+        .read_to_end(&mut bytes)
         .map_err(|_| fail())?;
+    Ok(bytes)
+}
+
+/// Downloads the `.tar.gz` or `.zip` at `url` and installs the executable `member` from it at `destination`.
+pub fn install_executable(member: &str, url: &str, destination: &Path, name: &str) -> Result<()> {
+    let fail = || AppError::Download(name.to_owned());
+    let archive = download(url, name)?;
 
     let binary = if url.ends_with(".zip") {
         from_zip(&archive, member)

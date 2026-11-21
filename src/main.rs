@@ -18,6 +18,7 @@ mod service;
 mod settings;
 mod shell;
 mod ui;
+mod updater;
 
 use controller::ServerController;
 use gpui::{
@@ -30,8 +31,10 @@ use ui::setup::SetupView;
 actions!(ricochet, [Quit, ToggleSettings]);
 
 fn main() {
+    // First, while the app has a single thread, because it sets environment variables.
     #[cfg(target_os = "linux")]
     ui::dashboard::linux_webview::prepare();
+    updater::clean_up();
     Application::new()
         .with_assets(assets::Assets)
         .run(|cx: &mut App| {

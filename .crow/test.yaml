@@ -11,10 +11,21 @@ labels:
 steps:
   'Lint and test':
     image: reg.ricochet.rs/docker.io/library/rust:1-bookworm
+    depends_on: []
     commands:
       - apt-get update -qq
       - apt-get install -y -qq --no-install-recommends build-essential pkg-config cmake clang libasound2-dev libfontconfig-dev libfreetype-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libssl-dev libzstd-dev libvulkan-dev libgtk-3-dev libwebkit2gtk-4.1-dev
-      - rustup component add rustfmt clippy
       - cargo fmt --check
       - cargo clippy --all-targets -- -D warnings
       - cargo test
+
+  # Lints the Windows-only code, which the Linux lint above never compiles.
+  'Lint the Windows build':
+    image: reg.ricochet.rs/docker.io/library/rust:1-bookworm
+    depends_on: []
+    commands:
+      - apt-get update -qq
+      - apt-get install -y -qq --no-install-recommends clang lld llvm curl
+      - cargo install cargo-xwin --locked
+      - curl -fsSL https://just.systems/install.sh | bash -s -- --tag 1.43.0 --to /usr/local/bin
+      - just lint-windows
