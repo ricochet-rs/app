@@ -69,6 +69,9 @@ Set `HOME` inside ricochet's folder, and point `JULIAUP_DEPOT_PATH` and `UV_PYTH
 
 ## Content
 
+Show a server's own web UI in the system webview on macOS and Windows, through gpui-component's `webview` feature, so the app and the server share one UI; Linux keeps the native pages, because wry can't place WebKitGTK inside a Wayland window.
+Hide the webview whenever something else must show over the content area, such as the server menu, because the system draws it above the GPUI window.
+Hand only `http` and `https` links from the webview to the browser, because content on the server can ask to open any URL.
 Call ricochet's REST API only through `src/api.rs`, with blocking `ureq` calls on GPUI's background executor, because the app has no async HTTP runtime.
 Sign in through `/oauth/authorize` with a loopback `redirect_uri`, the flow the CLI uses, because ricochet mints an API key only for a loopback callback.
 Put a random nonce in the callback path and use `127.0.0.1` in it, because ricochet echoes no `state`, and any page could otherwise hand the app its own key.

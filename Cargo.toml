@@ -37,6 +37,11 @@ tempfile = "3.27.0"
 [target.'cfg(target_os = "macos")'.dependencies]
 plist = "1.10.3"
 
+# The server's web UI runs in the system's webview: WKWebView on macOS and WebView2 on Windows.
+# Linux has none the app can embed in a Wayland window, so there it opens in the browser.
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+gpui-component = { version = "0.5.1", features = ["webview"] }
+
 # GPUI precompiles its Windows shaders with fxc.exe only when it builds on Windows, so the cross-compiled
 # Windows build keeps its debug assertions on, which makes GPUI compile those shaders at run time.
 [profile.windows]

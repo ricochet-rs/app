@@ -6,7 +6,7 @@ use crate::ui::components::{card, heading, prose};
 use crate::ui::dashboard::InstanceChange;
 use crate::ui::icons::ph;
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, Entity, Window, div, px};
+use gpui::{AnyElement, Context, DismissEvent, Entity, Window, div, px};
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
@@ -55,6 +55,7 @@ impl SetupView {
             .active_server(cx)
             .filter(|server| dashboard.is_signed_in(server));
         let dashboard = self.dashboard.clone();
+        let cover = self.dashboard.clone();
         let view = cx.entity();
         let icon = shown.icon();
         Button::new("connection")
@@ -63,7 +64,20 @@ impl SetupView {
             .outline()
             .small()
             .disabled(busy)
-            .dropdown_menu(move |mut menu, _, _| {
+            .dropdown_menu(move |menu, _, cx| {
+                let mut menu = menu;
+                // The system draws the web UI above the window, so it hides while the menu is open.
+                cover.update(cx, |dashboard, cx| dashboard.set_covered(true, cx));
+                let uncover = cover.clone();
+                cx.subscribe_self(move |_, _: &DismissEvent, cx| {
+                    uncover.update(cx, |dashboard, cx| dashboard.set_covered(false, cx));
+                })
+                .detach();
+                let uncover = cover.clone();
+                cx.on_release(move |_, cx| {
+                    uncover.update(cx, |dashboard, cx| dashboard.set_covered(false, cx));
+                })
+                .detach();
                 for (index, (group, entries)) in sections.iter().enumerate() {
                     if index > 0 {
                         menu = menu.separator();

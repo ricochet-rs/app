@@ -9,6 +9,8 @@ mod item;
 mod log;
 mod pages;
 mod table;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+mod web;
 use crate::connections::Connection;
 use crate::controller::{DEFAULT_PORT, ServerController, ServerStatus};
 use crate::servers::{Instance, Placement, Server, Servers};
@@ -20,6 +22,10 @@ use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, Disableable, Sizable, h_flex, v_flex};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Whether a server's content shows as its own web UI in a webview, rather than as the native pages.
+/// Linux has no webview the app can place inside a Wayland window.
+pub const SHOWS_WEB_UI: bool = cfg!(any(target_os = "macos", target_os = "windows"));
 
 /// Asks the window to show where ricochet can be installed, instead of connecting by address.
 pub struct InstallInstead;
@@ -43,6 +49,9 @@ enum Content {
     Loading,
     Loaded(Vec<Item>),
     Failed(String),
+    /// The server's web UI, at this address.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    Web(String),
 }
 
 /// Something the dashboard reads from the server.
@@ -154,6 +163,10 @@ pub struct DashboardView {
     notice: Option<String>,
     /// The managed server and its status at the last load, to load again when either changes.
     seen_managed: (Option<Server>, ServerStatus),
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    web: web::Web,
+    /// Whether a menu drops over the content, so the web UI must hide to let it show.
+    covered: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -231,6 +244,9 @@ impl DashboardView {
             busy: None,
             notice: None,
             seen_managed: (None, ServerStatus::Stopped),
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            web: web::Web::default(),
+            covered: false,
             _subscriptions: subscriptions,
         };
         view.seen_managed = view.managed_state(cx);
@@ -273,6 +289,23 @@ impl DashboardView {
     /// The server whose content shows: the added one you picked, otherwise the managed one.
     pub fn active_server(&self, cx: &App) -> Option<Server> {
         self.added_server().or_else(|| self.managed_server(cx))
+    }
+
+    /// Hides the web UI while a menu drops over it, and shows it again once the menu closes.
+    pub fn set_covered(&mut self, covered: bool, cx: &mut Context<Self>) {
+        self.covered = covered;
+        if covered {
+            self.hide_web(cx);
+        }
+        cx.notify();
+    }
+
+    /// Hides the web UI, which the system draws above the window and would cover anything else shown there.
+    pub fn hide_web(&mut self, cx: &mut App) {
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        self.web.hide(cx);
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        let _ = cx;
     }
 
     pub fn is_signed_in(&self, server: &Server) -> bool {
@@ -432,6 +465,15 @@ impl DashboardView {
             cx.notify();
             return;
         }
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        self.show_web(server, cx);
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        self.load_items(server, cx);
+    }
+
+    /// Reads the server's content through the REST API, for the native pages.
+    #[cfg_attr(any(target_os = "macos", target_os = "windows"), allow(dead_code))]
+    fn load_items(&mut self, server: Server, cx: &mut Context<Self>) {
         let Some(client) = self.client(&server) else {
             self.content = Content::SignedOut;
             cx.notify();
@@ -822,6 +864,14 @@ impl DashboardView {
     }
 
     fn body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        if let Content::Web(url) = &self.content
+            && !self.adding_server
+        {
+            let url = url.clone();
+            return self.web_page(url, window, cx);
+        }
+        self.hide_web(cx);
         if self.adding_server || matches!(self.content, Content::NoServer) {
             return self
                 .centered(self.add_server_form(cx), cx)
@@ -829,6 +879,8 @@ impl DashboardView {
         }
         match &self.content {
             Content::NoServer => unreachable!("handled above"),
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            Content::Web(_) => unreachable!("handled above"),
             Content::NotRunning => self.centered(self.not_running(cx), cx).into_any_element(),
             Content::SignedOut => {
                 let Some(server) = self.active_server(cx) else {

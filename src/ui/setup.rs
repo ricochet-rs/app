@@ -4,7 +4,7 @@ use super::components::{
     callout, card, card_title, danger_button, error_alert, heading, prose, rule, segmented,
     selection_mark, setting_row, tab_bar,
 };
-use super::dashboard::{DashboardView, InstallInstead, Page};
+use super::dashboard::{DashboardView, InstallInstead, Page, SHOWS_WEB_UI};
 use super::icons::ph;
 use super::section::SetupSection;
 use crate::config::section::{Field as _, SettingsSection as _};
@@ -962,20 +962,34 @@ impl SetupView {
                 }))
         });
         let shown_page = self.dashboard.read(cx).page();
-        let pages: Vec<_> = Page::ALL
-            .into_iter()
-            .map(|page| {
+        let pages: Vec<_> = if SHOWS_WEB_UI {
+            vec![
                 self.sidebar_row(
-                    page.id(),
-                    page.icon(),
-                    page.title(),
-                    self.showing_content && shown_page == page,
+                    "content",
+                    "squares-four",
+                    "Content",
+                    self.showing_content,
                     false,
                     cx,
                 )
-                .on_click(cx.listener(move |this, _, _, cx| this.show_page(page, cx)))
-            })
-            .collect();
+                .on_click(cx.listener(|this, _, _, cx| this.show_content(cx))),
+            ]
+        } else {
+            Page::ALL
+                .into_iter()
+                .map(|page| {
+                    self.sidebar_row(
+                        page.id(),
+                        page.icon(),
+                        page.title(),
+                        self.showing_content && shown_page == page,
+                        false,
+                        cx,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| this.show_page(page, cx)))
+                })
+                .collect()
+        };
         let sidebar = v_flex()
             .w(px(220.0))
             .flex_shrink_0()
@@ -2430,6 +2444,15 @@ impl SetupView {
 
 impl Render for SetupView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let added = self.dashboard.read(cx).added_server().is_some();
+        let shows_dashboard = self.onboarding.is_none()
+            && !(self.server.read(cx).loading && !added)
+            && self.instance_inputs.is_none()
+            && self.showing_content;
+        if !shows_dashboard {
+            self.dashboard
+                .update(cx, |dashboard, cx| dashboard.hide_web(cx));
+        }
         if let Some(step) = self.onboarding {
             return self.onboarding_view(step, cx);
         }
