@@ -22,7 +22,22 @@ fn main() {
     use std::process::{Command, Stdio};
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    let mut arguments = std::env::args_os().skip(1);
+    let mut arguments = std::env::args_os().skip(1).peekable();
+    // Leading `--env NAME=VALUE` pairs, such as the proxy, which a `Run` entry can't set otherwise.
+    let mut environment = Vec::new();
+    while arguments.peek().is_some_and(|argument| argument == "--env") {
+        arguments.next();
+        if let Some((name, value)) = arguments
+            .next()
+            .and_then(|pair| pair.into_string().ok())
+            .and_then(|pair| {
+                pair.split_once('=')
+                    .map(|(n, v)| (n.to_owned(), v.to_owned()))
+            })
+        {
+            environment.push((name, value));
+        }
+    }
     let (Some(home), Some(stdout), Some(stderr), Some(program)) = (
         arguments.next(),
         arguments.next(),
@@ -47,6 +62,7 @@ fn main() {
         let status = Command::new(&program)
             .args(&rest)
             .current_dir(&home)
+            .envs(environment.iter().map(|(name, value)| (name, value)))
             .stdin(Stdio::null())
             .stdout(out)
             .stderr(err)

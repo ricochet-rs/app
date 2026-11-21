@@ -7,6 +7,7 @@ mod deployments;
 mod email;
 mod logging;
 mod packages;
+mod proxy;
 pub mod section;
 mod server;
 mod tasks;
@@ -19,6 +20,7 @@ pub use deployments::DeploymentSettings;
 pub use email::{EmailSettings, Encryption};
 pub use logging::{LogLevel, LogRotation, LoggingSettings};
 pub use packages::{PackageIndex, PackageSettings, RRepository};
+pub use proxy::{Proxy, ProxyMode, ProxySettings, split_hosts};
 pub use server::ServerSettings;
 pub use tasks::TaskSettings;
 pub use telemetry::TelemetrySettings;
@@ -42,6 +44,7 @@ pub struct ServerConfig {
     pub logging: LoggingSettings,
     pub audit_log: AuditLogSettings,
     pub telemetry: TelemetrySettings,
+    pub proxy: ProxySettings,
 }
 
 impl ServerConfig {
@@ -69,6 +72,7 @@ impl ServerConfig {
             logging: LoggingSettings::from_table(table),
             audit_log: AuditLogSettings::from_table(table),
             telemetry: TelemetrySettings::from_table(table),
+            proxy: ProxySettings::from_table(table),
         }
     }
 
@@ -103,6 +107,7 @@ impl ServerConfig {
         self.logging.apply(table);
         self.audit_log.apply(table);
         self.telemetry.apply(table);
+        self.proxy.apply(table);
 
         let ports = NetworkPorts::new(
             proxy_port,
@@ -258,6 +263,11 @@ entity_id = "https://old.example.com"
             telemetry: TelemetrySettings {
                 enabled: true,
                 endpoint: "http://localhost:4317".into(),
+            },
+            proxy: ProxySettings {
+                mode: ProxyMode::Manual,
+                url: "http://proxy.example.com:8080".into(),
+                bypass: ".corp.example.com".into(),
             },
         };
 

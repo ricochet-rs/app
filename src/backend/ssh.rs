@@ -218,6 +218,8 @@ pub struct SshBackend {
     shell: Arc<SshShell>,
     service: Box<dyn Service>,
     tunnel: Mutex<Option<(u16, Child)>>,
+    /// The proxy variables for downloads on that computer, from its Network proxy pane.
+    proxy: Mutex<Vec<(String, String)>>,
 }
 
 impl SshBackend {
@@ -248,6 +250,7 @@ impl SshBackend {
             shell,
             service,
             tunnel: Mutex::new(None),
+            proxy: Mutex::new(Vec::new()),
         })
     }
 
@@ -358,7 +361,10 @@ impl Backend for SshBackend {
     fn health(&self, port: u16) -> bool {
         let url = format!("http://localhost:{port}/health");
         self.shell
-            .run("curl", &["-fsS", "-o", "/dev/null", "-m", "2", &url])
+            .run(
+                "curl",
+                &["-fsS", "--noproxy", "*", "-o", "/dev/null", "-m", "2", &url],
+            )
             .is_ok_and(|result| result.success)
     }
 
@@ -382,10 +388,18 @@ impl Backend for SshBackend {
                 .to_string_lossy(),
         );
         let url = sh_quote(&release.archive_url(target));
+        // The proxy can hold a password, so it reaches curl through stdin rather than a command line `ps` shows.
+        let proxy: String = self
+            .proxy
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .map(|(name, value)| format!("{name}={}\n", sh_quote(value)))
+            .collect();
         let script = format!(
-            "set -e; tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT; curl -fsSL {url} -o \"$tmp/r.tar.gz\"; tar -xzf \"$tmp/r.tar.gz\" -C \"$tmp\" ricochet-server; mkdir -p {folder}; mv -f \"$tmp/ricochet-server\" {binary}.new; chmod 755 {binary}.new; mv -f {binary}.new {binary}"
+            "set -e; set -a; . /dev/stdin; set +a; tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT; curl -fsSL {url} -o \"$tmp/r.tar.gz\"; tar -xzf \"$tmp/r.tar.gz\" -C \"$tmp\" ricochet-server; mkdir -p {folder}; mv -f \"$tmp/ricochet-server\" {binary}.new; chmod 755 {binary}.new; mv -f {binary}.new {binary}"
         );
-        let result = self.shell.run("sh", &["-c", &script])?;
+        let result = self.shell.script(&script, Some(proxy.as_bytes()))?;
         if result.success {
             Ok(())
         } else {
@@ -439,6 +453,18 @@ impl Backend for SshBackend {
         Ok(entries)
     }
 
+    /// The proxy that `HTTPS_PROXY` names in a login shell there, as `/etc/environment` or a profile sets it.
+    fn system_proxy(&self) -> Option<crate::config::Proxy> {
+        let printed = self.shell.run("sh", &["-lc", "env"]).ok()?.stdout;
+        crate::config::Proxy::from_environment(
+            printed.lines().filter_map(|line| line.split_once('=')),
+        )
+    }
+
+    fn use_proxy(&self, environment: &[(String, String)]) {
+        *self.proxy.lock().unwrap_or_else(|e| e.into_inner()) = environment.to_vec();
+    }
+
     /// Deletes `paths` for good, because a Linux server has no Trash to move them to.
     fn remove_data(&self, paths: &[PathBuf]) -> Result<()> {
         if paths.is_empty() {
@@ -454,6 +480,10 @@ impl Backend for SshBackend {
         } else {
             Err(AppError::UserCommand(result.output()))
         }
+    }
+
+    fn reach_dashboard(&self, port: u16) -> Result<()> {
+        self.ensure_tunnel(port)
     }
 
     fn open_dashboard(&self, port: u16) -> Result<()> {

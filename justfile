@@ -32,6 +32,10 @@ lint-windows:
 test:
     cargo test
 
+# Sample the CPU, energy impact and memory of the app and its web UI on macOS
+energy seconds="60" label="sample":
+    scripts/energy.sh {{seconds}} {{label}}
+
 # Download the renv tarball the macOS and Windows builds ship, into dist/
 renv:
     #!/usr/bin/env bash
@@ -92,6 +96,11 @@ appimage version="0.0.0":
         --executable target/release/ricochet-app \
         --desktop-file dist/ricochet.desktop \
         --icon-file dist/ricochet.png \
+        --exclude-library 'libwebkit2gtk-4.1*' --exclude-library 'libjavascriptcoregtk-4.1*' \
+        --exclude-library 'libgtk-3*' --exclude-library 'libgdk-3*' --exclude-library 'libgdk_pixbuf-2.0*' \
+        --exclude-library 'libsoup-3.0*' --exclude-library 'libglib-2.0*' --exclude-library 'libgobject-2.0*' \
+        --exclude-library 'libgio-2.0*' --exclude-library 'libgmodule-2.0*' --exclude-library 'libpango*' \
+        --exclude-library 'libcairo*' --exclude-library 'libharfbuzz*' --exclude-library 'libatk*' \
         --output appimage
     mv ricochet-*-x86_64.AppImage "dist/ricochet-{{ version }}-x86_64.AppImage"
 

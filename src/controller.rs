@@ -116,6 +116,18 @@ impl ServerController {
         self.backend.clone()
     }
 
+    /// The computers you connected to: this one and the SSH hosts you added.
+    pub fn connected(&self) -> Vec<Connection> {
+        self.store.connected()
+    }
+
+    /// Forgets an SSH host you added; the one being managed stays until you switch away.
+    pub fn forget(&mut self, host: &str, cx: &mut Context<Self>) {
+        self.store.forget(host);
+        self.store.save();
+        cx.notify();
+    }
+
     /// Every computer to offer: this one, hosts you saved, and hosts from your SSH config.
     pub fn choices(&self) -> Vec<Connection> {
         self.store.choices(&self.discovered)
@@ -166,6 +178,9 @@ impl ServerController {
         self.perform(&activity, "Couldn't connect", cx, move |_, _| {
             let backend = connection.connect()?;
             let saved = backend.load_config();
+            if let Some(config) = &saved {
+                backend.use_proxy(&backend.proxy_environment(&config.proxy));
+            }
             Ok(Update {
                 configured: Some(saved.is_some()),
                 proxy_port: Some(saved.as_ref().and_then(|c| c.server.proxy_port())),
@@ -189,6 +204,9 @@ impl ServerController {
                 if Some(port) != saved_port && !backend.is_port_free(port) {
                     return Err(AppError::PortInUse(port));
                 }
+                // The proxy reaches the service's environment and this setup's own downloads.
+                let environment = backend.proxy_environment(&config.proxy);
+                backend.use_proxy(&environment);
                 progress.activity("Stopping ricochet");
                 backend.service().stop()?;
                 if !installed {
@@ -197,7 +215,7 @@ impl ServerController {
                 progress.activity("Writing your configuration");
                 backend.prepare()?;
                 backend.save_config(&config, port)?;
-                backend.service().write_job()?;
+                backend.service().write_job(&environment)?;
                 if keep_running {
                     // Lingering is a convenience, so a refusal must not undo an install that works.
                     let _ = backend.keep_running_after_logout();
@@ -496,7 +514,12 @@ impl ServerController {
             cx,
             move |backend, _| {
                 let _ = backend.prepare();
-                if backend.service().write_job()? && backend.service().is_loaded() {
+                let environment = backend
+                    .load_config()
+                    .map(|config| backend.proxy_environment(&config.proxy))
+                    .unwrap_or_default();
+                backend.use_proxy(&environment);
+                if backend.service().write_job(&environment)? && backend.service().is_loaded() {
                     backend.service().stop()?;
                     backend.service().start()?;
                     backend.wait_until_running(port)?;

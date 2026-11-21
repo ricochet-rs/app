@@ -11,7 +11,7 @@ use gpui_component::Disableable as _;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::spinner::Spinner;
-use gpui_component::{ActiveTheme, h_flex, v_flex};
+use gpui_component::{ActiveTheme, Sizable as _, h_flex, v_flex};
 
 const INSTALL_STAGES: [&str; 4] = [
     "Checking your settings",
@@ -392,6 +392,26 @@ impl SetupView {
                         .child(connect),
                     cx,
                 ))
+                .child(
+                    h_flex()
+                        .gap_3()
+                        .items_center()
+                        .child(
+                            div()
+                                .flex_1()
+                                .text_sm()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(prose("Already running ricochet somewhere? Connect to it by its address instead.")),
+                        )
+                        .child(
+                            Button::new("target-connect-server")
+                                .icon(ph("globe"))
+                                .label("Connect to a server")
+                                .outline()
+                                .small()
+                                .on_click(cx.listener(|this, _, _, cx| this.add_server(cx))),
+                        ),
+                )
                 .into_any_element(),
         )
     }
@@ -651,13 +671,25 @@ impl SetupView {
         let (left, right): (Option<AnyElement>, Option<AnyElement>) = match step {
             Step::Welcome => (
                 Some(
-                    Button::new("advanced")
-                        .label("Skip to settings")
-                        .ghost()
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.onboarding = None;
-                            cx.notify();
-                        }))
+                    h_flex()
+                        .gap_2()
+                        .child(
+                            Button::new("advanced")
+                                .label("Skip to settings")
+                                .ghost()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.onboarding = None;
+                                    this.showing_content = false;
+                                    cx.notify();
+                                })),
+                        )
+                        .child(
+                            Button::new("connect-to-server")
+                                .icon(ph("globe"))
+                                .label("Connect to a server")
+                                .ghost()
+                                .on_click(cx.listener(|this, _, _, cx| this.add_server(cx))),
+                        )
                         .into_any_element(),
                 ),
                 Some(next("Get started", "arrow-right", Step::Target, None, cx).into_any_element()),

@@ -77,6 +77,29 @@ impl Store {
         self.active = Some(connection.clone());
     }
 
+    /// Forgets an SSH host you added, and stops making it the active one.
+    pub fn forget(&mut self, host: &str) {
+        self.saved.retain(|saved| saved != host);
+        if self.active
+            == Some(Connection::Ssh {
+                host: host.to_owned(),
+            })
+        {
+            self.active = Some(Connection::Local);
+        }
+    }
+
+    /// This computer and the SSH hosts you connected to, without those only in your SSH config.
+    pub fn connected(&self) -> Vec<Connection> {
+        std::iter::once(Connection::Local)
+            .chain(
+                self.saved
+                    .iter()
+                    .map(|host| Connection::Ssh { host: host.clone() }),
+            )
+            .collect()
+    }
+
     /// Every connection to offer: this computer, hosts you saved, then hosts from your SSH config.
     pub fn choices(&self, discovered: &[String]) -> Vec<Connection> {
         let mut hosts: Vec<&String> = Vec::new();

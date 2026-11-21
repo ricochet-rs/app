@@ -14,11 +14,12 @@ pub enum SetupSection {
     Logging,
     AuditLog,
     Telemetry,
+    Proxy,
     DangerZone,
 }
 
 impl SetupSection {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Authentication,
         Self::Server,
         Self::Users,
@@ -29,11 +30,13 @@ impl SetupSection {
         Self::Logging,
         Self::AuditLog,
         Self::Telemetry,
+        Self::Proxy,
         Self::DangerZone,
     ];
 
     /// The pages in the sidebar's Server submenu.
-    pub const SERVER_PAGES: [Self; 3] = [Self::Server, Self::Logging, Self::DangerZone];
+    pub const SERVER_PAGES: [Self; 4] =
+        [Self::Server, Self::Proxy, Self::Logging, Self::DangerZone];
 
     /// The pages in the sidebar's Optional group.
     pub const OPTIONAL: [Self; 7] = [
@@ -59,6 +62,7 @@ impl SetupSection {
             Self::Logging => "Logging",
             Self::AuditLog => "Audit log",
             Self::Telemetry => "OpenTelemetry",
+            Self::Proxy => "Network proxy",
         }
     }
 
@@ -75,6 +79,7 @@ impl SetupSection {
             Self::Logging => "file-text",
             Self::AuditLog => "clipboard-text",
             Self::Telemetry => "pulse",
+            Self::Proxy => "globe",
             Self::DangerZone => "warning",
         }
     }
@@ -104,6 +109,9 @@ impl SetupSection {
             Self::Logging => Some("ricochet writes its logs to `~/.local/share/ricochet/logs`."),
             Self::AuditLog => Some("Manage audit log retention and storage."),
             Self::Telemetry => Some("Send traces to an OpenTelemetry collector over gRPC."),
+            Self::Proxy => Some(
+                "The proxy ricochet uses to install packages and deploy from Git, and the app uses to download ricochet.",
+            ),
             Self::DangerZone => Some("Browse ricochet's files, delete its data, or uninstall it."),
         }
     }
@@ -120,6 +128,7 @@ impl SetupSection {
             Self::Logging => config.logging.problem(),
             Self::AuditLog => config.audit_log.problem(),
             Self::Telemetry => config.telemetry.problem(),
+            Self::Proxy => config.proxy.problem(),
             Self::DangerZone => None,
         }
     }

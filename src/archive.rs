@@ -29,10 +29,7 @@ pub fn from_zip(archive: &[u8], member: &str) -> Option<Vec<u8>> {
 /// The bytes at `url`, where `name` says what they are in the error shown when the download fails.
 pub fn download(url: &str, name: &str) -> Result<Vec<u8>> {
     let fail = || AppError::Download(name.to_owned());
-    let mut response = ureq::get(url)
-        .config()
-        .timeout_global(Some(Duration::from_secs(600)))
-        .build()
+    let mut response = crate::net::download(url, Duration::from_secs(600))
         .call()
         .map_err(|_| fail())?;
     let mut bytes = Vec::new();

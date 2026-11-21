@@ -42,6 +42,30 @@ Every host from your SSH config shows up in the app, and you can add one with `u
 
 Each SSH host is expected to be a Linux machine you can reach with key-based SSH access.
 
+## See your content
+
+The app shows a ricochet server's own web UI inside its window, so everything you can do in the browser works in the app too.
+You sign in there the same way you do in the browser.
+Apps and documents open in your browser.
+
+On Linux the app needs GTK 3 and WebKitGTK 4.1 from your distribution, such as `libwebkit2gtk-4.1-0` on Debian and Ubuntu or `webkit2gtk4.1` on Fedora.
+It runs on X11, through XWayland on a Wayland desktop.
+
+Switch instances from the menu in the title bar.
+It lists this machine, the SSH hosts you connected to, and any other ricochet server you connected to by its address.
+**Connect another instance** connects to a running ricochet by its address, or installs ricochet on a machine instead, and **Manage instances** lets you rename, group and reorder the list.
+A server you connected to by address shows only its web UI, since the app doesn't manage it.
+For a machine the app manages, press ⌘, on macOS or Ctrl+, on Windows and Linux, choose **Settings…** in the app menu, or select the settings button in the title bar to change its configuration, and select **Done** to return to its web UI.
+
+## Behind a proxy
+
+Each machine's **Network proxy** page, under **Server** in its settings, sets the HTTP proxy ricochet uses there to install packages and deploy from Git.
+By default it uses the machine's own settings: System Settings on macOS, Windows Settings on Windows, and `HTTPS_PROXY` on Linux and SSH hosts.
+Choose **Use this proxy** to enter one yourself, with the hosts that should bypass it.
+The app itself has a **Network proxy** setting on its **App settings** page, which ⌘, or Ctrl+, opens for a server you added by address, and **App settings** opens from the sidebar of a machine's settings.
+By default the app follows your operating system's proxy settings.
+Enter a proxy there when the app needs one to reach a ricochet server or to download ricochet.
+
 ## Bring your own languages
 
 The app doesn't install R, Julia, or Python.
