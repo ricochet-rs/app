@@ -57,7 +57,9 @@ impl SetupView {
 
     /// The server button, which drops a menu of your instances in their groups and ways to add or arrange them.
     pub(super) fn machine_menu(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        // The controller runs one operation on one machine, so only switching machines waits for it.
         let busy = self.server.read(cx).activity.is_some();
+        let managing = Instance::Machine(self.server.read(cx).connection.clone());
         let shown = self.shown_instance(cx);
         let arranged = self.arranged(cx);
         let name = arranged
@@ -79,7 +81,6 @@ impl SetupView {
             .ghost()
             .xsmall()
             .dropdown_caret(true)
-            .disabled(busy)
             .dropdown_menu(move |menu, _, cx| {
                 let mut menu = menu;
                 // The system draws the web UI above the window, so it hides while the menu is open.
@@ -152,6 +153,10 @@ impl SetupView {
                             })
                             .icon(ph(instance.icon()))
                             .checked(*instance == shown)
+                            .disabled(
+                                busy && matches!(instance, Instance::Machine(_))
+                                    && *instance != managing,
+                            )
                             .on_click(move |_, _, cx| {
                                 let target = target.clone();
                                 let settings = wants_settings.take();

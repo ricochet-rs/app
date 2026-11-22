@@ -21,6 +21,7 @@ Never write a `[backend]` section, because content runs as processes on the mach
 The content area in `src/ui/dashboard/` shows a server's own web UI, for the managed server and for any server added by address.
 List managed machines and added servers in the one server menu of `SetupView`, and show settings only for a managed machine, so the window never has two switchers that both mean "which server".
 List only the machines you connected to in that menu, never every host in the SSH config, which only the add-machine step offers.
+Keep that menu open while the managed server starts, stops or restarts, and disable only the other managed machines in it, because the controller runs one operation on one backend and a switch would apply its result to the wrong machine.
 Split the bottom of that menu into **Connect**, which adds a running server by its address, and **Manage**, which installs ricochet on this computer or an SSH host, and give each managed machine's row a **Settings** button, because people otherwise can't tell how to add another machine or reach a machine's settings once ricochet is installed.
 Offer OpenID Connect and Entra only: ricochet refuses a SAML assertion consumer URL that is not `https`, and the server here serves `http://localhost`.
 

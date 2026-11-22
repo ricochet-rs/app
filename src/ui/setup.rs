@@ -692,6 +692,10 @@ impl SetupView {
 
     /// Shows a machine this app manages, connecting to it first when it is not the current one.
     fn show_machine(&mut self, target: Connection, cx: &mut Context<Self>) {
+        let server = self.server.read(cx);
+        if target != server.connection && server.activity.is_some() {
+            return;
+        }
         self.dashboard
             .update(cx, |dashboard, cx| dashboard.show_managed(cx));
         let server = self.server.read(cx);
@@ -1162,7 +1166,13 @@ impl SetupView {
 
     fn detail(&self, cx: &mut Context<Self>) -> Div {
         if self.showing_content {
-            let failure = self.server.read(cx).failure.clone();
+            // A managed machine's failure waits until that machine shows again.
+            let failure = self
+                .server
+                .read(cx)
+                .failure
+                .clone()
+                .filter(|_| self.dashboard.read(cx).added_server().is_none());
             let server = self.server.clone();
             return v_flex()
                 .flex_1()
