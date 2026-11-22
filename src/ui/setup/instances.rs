@@ -30,6 +30,23 @@ impl SetupView {
         }
     }
 
+    /// Shows the settings of a machine this app manages, connecting to it first when it is not the current one.
+    fn open_machine_settings(
+        &mut self,
+        connection: crate::connections::Connection,
+        cx: &mut Context<Self>,
+    ) {
+        let current = self.server.read(cx).connection == connection;
+        self.show_instance(Instance::Machine(connection), cx);
+        if current {
+            self.select(self.section, cx);
+        } else {
+            // The pane loads what it needs once the machine has connected.
+            self.showing_content = false;
+            cx.notify();
+        }
+    }
+
     fn show_instance(&mut self, instance: Instance, cx: &mut Context<Self>) {
         self.instance_inputs = None;
         match instance {
@@ -98,8 +115,12 @@ impl SetupView {
                             Instance::Machine(_) if *instance == shown => in_browser.clone(),
                             Instance::Machine(_) => None,
                         };
-                        let button_id = ("open-instance", opened);
+                        let has_settings = matches!(instance, Instance::Machine(_));
+                        let row = opened;
                         opened += 1;
+                        // The Settings button lets its click reach the row, which closes the menu and opens the settings.
+                        let wants_settings = std::rc::Rc::new(std::cell::Cell::new(false));
+                        let pressed = wants_settings.clone();
                         menu = menu.item(
                             PopupMenuItem::element(move |_, cx| {
                                 h_flex()
@@ -108,7 +129,7 @@ impl SetupView {
                                     .items_center()
                                     .child(div().flex_1().truncate().child(label.clone()))
                                     .children(url.clone().map(|url| {
-                                        Button::new(button_id)
+                                        Button::new(("open-instance", row))
                                             .icon(ph("arrow-square-out"))
                                             .tooltip("Open in browser")
                                             .ghost()
@@ -119,31 +140,62 @@ impl SetupView {
                                                 let _ = open::that(&url);
                                             })
                                     }))
+                                    .children(has_settings.then(|| {
+                                        let pressed = pressed.clone();
+                                        Button::new(("instance-settings", row))
+                                            .icon(ph("gear-six"))
+                                            .label("Settings")
+                                            .outline()
+                                            .xsmall()
+                                            .on_click(move |_, _, _| pressed.set(true))
+                                    }))
                             })
                             .icon(ph(instance.icon()))
                             .checked(*instance == shown)
                             .on_click(move |_, _, cx| {
                                 let target = target.clone();
-                                view.update(cx, |this, cx| this.show_instance(target, cx));
+                                let settings = wants_settings.take();
+                                view.update(cx, |this, cx| match (&target, settings) {
+                                    (Instance::Machine(connection), true) => {
+                                        this.open_machine_settings(connection.clone(), cx)
+                                    }
+                                    _ => this.show_instance(target, cx),
+                                });
                             }),
                         );
                     }
                 }
-                let (connect, manage) = (view.clone(), view.clone());
+                let (connect, install, arrange, app) =
+                    (view.clone(), view.clone(), view.clone(), view.clone());
                 menu = menu
                     .separator()
+                    .label("Connect")
                     .item(
-                        PopupMenuItem::new("Connect another instance")
-                            .icon(ph("plus"))
-                            .on_click(move |_, _, cx| {
-                                connect.update(cx, |this, cx| this.connect_another(cx))
-                            }),
+                        described_item(
+                            "Connect to a server…",
+                            "Open a ricochet that runs somewhere else, by its address.",
+                        )
+                        .icon(ph("link"))
+                        .on_click(move |_, _, cx| {
+                            connect.update(cx, |this, cx| this.connect_another(cx))
+                        }),
+                    )
+                    .label("Manage")
+                    .item(
+                        described_item(
+                            "Install ricochet…",
+                            "Set it up on this computer or on a Linux server over SSH.",
+                        )
+                        .icon(ph("download-simple"))
+                        .on_click(move |_, _, cx| {
+                            install.update(cx, |this, cx| this.install_instead(cx))
+                        }),
                     )
                     .item(
-                        PopupMenuItem::new("Manage instances")
-                            .icon(ph("sliders-horizontal"))
+                        PopupMenuItem::new("Arrange instances…")
+                            .icon(ph("list-dashes"))
                             .on_click(move |_, window, cx| {
-                                manage.update(cx, |this, cx| this.open_instances(window, cx))
+                                arrange.update(cx, |this, cx| this.open_instances(window, cx))
                             }),
                     );
                 if let Some(server) = showing.clone() {
@@ -156,7 +208,13 @@ impl SetupView {
                             }),
                     );
                 }
-                menu
+                menu.separator().item(
+                    PopupMenuItem::new("App settings…")
+                        .icon(ph("gear-six"))
+                        .on_click(move |_, window, cx| {
+                            app.update(cx, |this, cx| this.open_app_settings(window, cx))
+                        }),
+                )
             })
     }
 
@@ -355,4 +413,16 @@ impl SetupView {
             )
             .into_any_element()
     }
+}
+
+/// A menu item with a line below its title that says what it does.
+fn described_item(title: &'static str, detail: &'static str) -> PopupMenuItem {
+    PopupMenuItem::element(move |_, cx| {
+        v_flex().gap_0p5().child(title).child(
+            div()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(detail),
+        )
+    })
 }

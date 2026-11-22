@@ -21,6 +21,7 @@ Never write a `[backend]` section, because content runs as processes on the mach
 The content area in `src/ui/dashboard/` shows a server's own web UI, for the managed server and for any server added by address.
 List managed machines and added servers in the one server menu of `SetupView`, and show settings only for a managed machine, so the window never has two switchers that both mean "which server".
 List only the machines you connected to in that menu, never every host in the SSH config, which only the add-machine step offers.
+Split the bottom of that menu into **Connect**, which adds a running server by its address, and **Manage**, which installs ricochet on this computer or an SSH host, and give each managed machine's row a **Settings** button, because people otherwise can't tell how to add another machine or reach a machine's settings once ricochet is installed.
 Offer OpenID Connect and Entra only: ricochet refuses a SAML assertion consumer URL that is not `https`, and the server here serves `http://localhost`.
 
 ## App
@@ -57,7 +58,7 @@ Give ricochet's service `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` in both cases
 Keep the proxy out of command lines and world-readable files, because its URL can hold a password: write the launchd job and the systemd unit readable by their owner only, and hand it to a remote install through stdin.
 Always put `localhost`, `127.0.0.1` and `::1` in `NO_PROXY`, and reach ricochet's health check without a proxy, because the app and ricochet talk to each other on this machine.
 Read the system proxy from `scutil --proxy` on macOS, the `Internet Settings` registry key on Windows, and `HTTPS_PROXY` elsewhere, including a login shell on an SSH host; PAC files aren't read.
-Keep the app's own proxy in `settings.json` next to `servers.json`, readable by its owner only, and show it on the **App settings** page, because the app may need a proxy to reach a server before any machine is set up.
+Keep the app's own proxy in `settings.json` next to `servers.json`, readable by its owner only, and show it in the **App settings** dialog, which the server menu opens, because the app may need a proxy to reach a server before any machine is set up.
 Send the app's own downloads through `net::download`, which uses that setting.
 Leave the webview on the operating system's proxy, which already handles PAC, unless you entered a proxy yourself.
 Keep two webviews, one direct and one through the proxy you entered, each with its own data folder and, on macOS, its own data store, because WebView2 takes a proxy only when its environment starts, WKWebView and WebKitGTK keep it in the shared store, and ricochet on `localhost` must never go through it.
@@ -90,6 +91,7 @@ Defer the window update in an app-level action handler with `cx.defer`, because 
 Open **App settings** with the same shortcut and button when the instance shown has no settings of its own, such as a server added by address, so the shortcut never does nothing.
 Hide the webview whenever something else must show over the content area, such as the server menu, because the system draws it above the GPUI window.
 Keep Cut, Copy, Paste and Select All in the app's Edit menu as `MenuItem::os_action` items bound to gpui-component's `input` actions, because WKWebView gets ⌘X, ⌘C, ⌘V and ⌘A only through the menu's `cut:`, `copy:`, `paste:` and `selectAll:`, and an item takes its shortcut from its action's key binding.
+Leave the web UI out of the workspace while the **App settings** dialog shows, rather than covering it, because the server menu uncovers the web UI when it closes, after the item that opened the dialog has run.
 Hand only `http` and `https` links from the webview to the browser, because content on the server can ask to open any URL.
 Keep the webview's cookies and storage in the app's data folder, because WebView2 can't write next to the program.
 Open a managed SSH server's tunnel through `Backend::reach_dashboard` before showing its web UI, because the server answers on `localhost` only while the tunnel is up.
