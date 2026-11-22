@@ -13,8 +13,14 @@ use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::{ActiveTheme, Disableable, Sizable, h_flex, v_flex};
 use std::collections::HashMap;
 
-/// The name and group fields of each instance while the Instances page is open, by instance id.
-pub(super) type InstanceInputs = HashMap<String, [Entity<InputState>; 2]>;
+/// The fields of the Instances page while it is open.
+#[derive(Default)]
+pub(super) struct InstanceInputs {
+    /// Each instance's name, by instance id.
+    names: HashMap<String, Entity<InputState>>,
+    /// Each group's name, by the name saved for it.
+    groups: HashMap<String, Entity<InputState>>,
+}
 
 impl SetupView {
     fn arranged(&self, cx: &gpui::App) -> Vec<(Instance, crate::servers::Placement)> {
@@ -239,48 +245,142 @@ impl SetupView {
     }
 
     pub(super) fn open_instances(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let mut inputs = InstanceInputs::new();
         self.instance_subscriptions.clear();
+        let mut inputs = InstanceInputs::default();
         for (instance, placement) in self.arranged(cx) {
             let id = instance.id();
-            let field = |value: Option<String>,
-                         placeholder: String,
-                         window: &mut Window,
-                         cx: &mut Context<Self>| {
-                cx.new(|cx| {
-                    let mut input = InputState::new(window, cx).placeholder(placeholder);
-                    input.set_value(value.unwrap_or_default(), window, cx);
-                    input
-                })
-            };
-            let name = field(placement.name, instance.default_name(), window, cx);
-            let group = field(placement.group, "No group".into(), window, cx);
-            for (input, is_name) in [(name.clone(), true), (group.clone(), false)] {
-                let id = id.clone();
-                self.instance_subscriptions.push(cx.subscribe_in(
-                    &input,
-                    window,
-                    move |this, input, event: &InputEvent, _, cx| {
-                        if !matches!(event, InputEvent::Change) {
-                            return;
-                        }
-                        let text = input.read(cx).value().to_string();
-                        let change = if is_name {
-                            InstanceChange::Name(text)
-                        } else {
-                            InstanceChange::Group(text)
-                        };
-                        let arranged = this.arranged(cx);
-                        this.dashboard.update(cx, |dashboard, cx| {
-                            dashboard.arrange_instance(&arranged, &id, change, cx)
-                        });
-                    },
-                ));
-            }
-            inputs.insert(id, [name, group]);
+            let name = text_field(
+                placement.name.unwrap_or_default(),
+                instance.default_name(),
+                window,
+                cx,
+            );
+            let target = id.clone();
+            self.instance_subscriptions.push(cx.subscribe_in(
+                &name,
+                window,
+                move |this, input, event: &InputEvent, _, cx| {
+                    if !matches!(event, InputEvent::Change) {
+                        return;
+                    }
+                    let change = InstanceChange::Name(input.read(cx).value().to_string());
+                    let arranged = this.arranged(cx);
+                    this.dashboard.update(cx, |dashboard, cx| {
+                        dashboard.arrange_instance(&arranged, &target, change, cx)
+                    });
+                },
+            ));
+            inputs.names.insert(id, name);
         }
         self.instance_inputs = Some(inputs);
+        self.add_group_fields(window, cx);
         cx.notify();
+    }
+
+    /// Gives each group without a name field one, which renames the group when you press Enter or leave it.
+    fn add_group_fields(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let groups: Vec<String> = self
+            .arranged(cx)
+            .into_iter()
+            .filter_map(|(_, placement)| placement.group)
+            .collect();
+        for group in groups {
+            let Some(inputs) = &self.instance_inputs else {
+                return;
+            };
+            if inputs.groups.contains_key(&group) {
+                continue;
+            }
+            let field = text_field(group.clone(), "Group name".into(), window, cx);
+            self.instance_subscriptions.push(cx.subscribe_in(
+                &field,
+                window,
+                |this, field, event: &InputEvent, window, cx| {
+                    if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                        this.rename_group(field, window, cx);
+                    }
+                },
+            ));
+            if let Some(inputs) = &mut self.instance_inputs {
+                inputs.groups.insert(group, field);
+            }
+        }
+    }
+
+    /// Renames the group whose name `field` holds to what you typed there, or puts its name back when you cleared it.
+    fn rename_group(
+        &mut self,
+        field: &Entity<InputState>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(inputs) = &mut self.instance_inputs else {
+            return;
+        };
+        let Some(from) = inputs
+            .groups
+            .iter()
+            .find(|(_, input)| *input == field)
+            .map(|(group, _)| group.clone())
+        else {
+            return;
+        };
+        let typed = field.read(cx).value().to_string();
+        let to = typed.trim().to_owned();
+        if to.is_empty() || to == from {
+            if typed != from {
+                field.update(cx, |input, cx| input.set_value(from, window, cx));
+            }
+            return;
+        }
+        inputs.groups.remove(&from);
+        inputs
+            .groups
+            .entry(to.clone())
+            .or_insert_with(|| field.clone());
+        let arranged = self.arranged(cx);
+        self.dashboard.update(cx, |dashboard, cx| {
+            dashboard.rename_group(&arranged, &from, &to, cx)
+        });
+        cx.notify();
+    }
+
+    /// Puts an instance into `group`, or into no group.
+    fn move_to_group(
+        &mut self,
+        id: &str,
+        group: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let change = InstanceChange::Group(group.unwrap_or_default());
+        let arranged = self.arranged(cx);
+        self.dashboard.update(cx, |dashboard, cx| {
+            dashboard.arrange_instance(&arranged, id, change, cx)
+        });
+        self.add_group_fields(window, cx);
+        cx.notify();
+    }
+
+    /// Puts an instance into a new group and focuses the group's name so you can type one.
+    fn move_to_new_group(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let taken: Vec<String> = self
+            .arranged(cx)
+            .into_iter()
+            .filter_map(|(_, placement)| placement.group)
+            .collect();
+        let group = std::iter::once("New group".to_owned())
+            .chain((2..).map(|n| format!("New group {n}")))
+            .find(|name| !taken.contains(name))
+            .unwrap_or_default();
+        self.move_to_group(id, Some(group.clone()), window, cx);
+        let field = self
+            .instance_inputs
+            .as_ref()
+            .and_then(|inputs| inputs.groups.get(&group).cloned());
+        if let Some(field) = field {
+            field.update(cx, |input, cx| input.focus(window, cx));
+        }
     }
 
     fn remove_instance(&mut self, instance: Instance, cx: &mut Context<Self>) {
@@ -304,81 +404,166 @@ impl SetupView {
         let Some(inputs) = &self.instance_inputs else {
             return div().into_any_element();
         };
-        let arranged = self.arranged(cx);
         let shown = self.shown_instance(cx);
-        let count = arranged.len();
-        let rows = arranged.iter().enumerate().map(|(index, (instance, _))| {
-            let id = instance.id();
-            let fields = inputs.get(&id).cloned();
-            let removable = !matches!(
-                instance,
-                Instance::Machine(crate::connections::Connection::Local)
-            ) && *instance != shown;
-            let shift = |offset: isize| {
-                let id = id.clone();
-                cx.listener(move |this: &mut Self, _: &gpui::ClickEvent, _, cx| {
-                    let arranged = this.arranged(cx);
-                    this.dashboard.update(cx, |dashboard, cx| {
-                        dashboard.arrange_instance(&arranged, &id, InstanceChange::Move(offset), cx)
-                    });
-                    cx.notify();
-                })
-            };
-            let target = instance.clone();
-            h_flex()
-                .gap_3()
-                .py_2()
-                .items_center()
-                .when(index > 0, |row| {
-                    row.border_t_1().border_color(cx.theme().border)
-                })
-                .child(
-                    ph(instance.icon())
-                        .size_4()
-                        .text_color(cx.theme().muted_foreground),
-                )
-                .children(fields.map(|[name, group]| {
+        let sections = Servers::sections(self.arranged(cx));
+        let groups: Vec<String> = sections
+            .iter()
+            .filter_map(|(group, _)| group.clone())
+            .collect();
+        let view = cx.entity();
+        let mut index: usize = 0;
+        let sections = sections.into_iter().map(|(group, entries)| {
+            let header = match &group {
+                Some(group) => Some(
                     h_flex()
-                        .flex_1()
-                        .min_w_0()
                         .gap_2()
-                        .child(div().flex_1().min_w_0().child(Input::new(&name)))
-                        .child(div().w(px(180.0)).child(Input::new(&group)))
-                }))
-                .child(
-                    Button::new(("instance-up", index))
-                        .icon(ph("arrow-up"))
-                        .tooltip("Move up")
-                        .ghost()
-                        .small()
-                        .disabled(index == 0)
-                        .on_click(shift(-1)),
-                )
-                .child(
-                    Button::new(("instance-down", index))
-                        .icon(ph("arrow-down"))
-                        .tooltip("Move down")
-                        .ghost()
-                        .small()
-                        .disabled(index + 1 == count)
-                        .on_click(shift(1)),
-                )
-                .child(
-                    Button::new(("instance-remove", index))
-                        .icon(ph("trash"))
-                        .tooltip(if removable {
-                            "Remove from the list"
-                        } else {
-                            "You can't remove the instance that shows, or this machine"
+                        .items_center()
+                        .child(
+                            ph("folder")
+                                .size_4()
+                                .text_color(cx.theme().muted_foreground),
+                        )
+                        .child(match inputs.groups.get(group) {
+                            Some(field) => div().w(px(240.0)).child(Input::new(field).small()),
+                            None => div().text_sm().child(group.clone()),
+                        }),
+                ),
+                None if !groups.is_empty() => Some(
+                    h_flex().h_8().items_center().child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child("Not in a group"),
+                    ),
+                ),
+                None => None,
+            };
+            let count = entries.len();
+            let rows = entries
+                .into_iter()
+                .enumerate()
+                .map(|(position, (instance, placement))| {
+                    let row = index;
+                    index += 1;
+                    let id = instance.id();
+                    let removable = !matches!(
+                        instance,
+                        Instance::Machine(crate::connections::Connection::Local)
+                    ) && instance != shown;
+                    let shift = |offset: isize| {
+                        let id = id.clone();
+                        cx.listener(move |this: &mut Self, _: &gpui::ClickEvent, _, cx| {
+                            let arranged = this.arranged(cx);
+                            this.dashboard.update(cx, |dashboard, cx| {
+                                dashboard.arrange_instance(
+                                    &arranged,
+                                    &id,
+                                    InstanceChange::Move(offset),
+                                    cx,
+                                )
+                            });
+                            cx.notify();
                         })
-                        .ghost()
-                        .small()
-                        .disabled(!removable)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.remove_instance(target.clone(), cx)
-                        })),
-                )
+                    };
+                    let group_menu = {
+                        let (view, id, groups, current) = (
+                            view.clone(),
+                            id.clone(),
+                            groups.clone(),
+                            placement.group.clone(),
+                        );
+                        Button::new(("instance-group", row))
+                            .label(current.clone().unwrap_or_else(|| "No group".into()))
+                            .tooltip("Choose the heading it shows under in the server menu")
+                            .outline()
+                            .small()
+                            .dropdown_caret(true)
+                            .w_full()
+                            .dropdown_menu(move |menu, _, _| {
+                                let choice = |label: String, group: Option<String>| {
+                                    let (view, id) = (view.clone(), id.clone());
+                                    PopupMenuItem::new(label)
+                                        .checked(current == group)
+                                        .on_click(move |_, window, cx| {
+                                            let group = group.clone();
+                                            view.update(cx, |this, cx| {
+                                                this.move_to_group(&id, group, window, cx)
+                                            });
+                                        })
+                                };
+                                let mut menu = menu.item(choice("No group".into(), None));
+                                for group in &groups {
+                                    menu = menu.item(choice(group.clone(), Some(group.clone())));
+                                }
+                                let (view, id) = (view.clone(), id.clone());
+                                menu.separator().item(
+                                    PopupMenuItem::new("New group").icon(ph("plus")).on_click(
+                                        move |_, window, cx| {
+                                            view.update(cx, |this, cx| {
+                                                this.move_to_new_group(&id, window, cx)
+                                            });
+                                        },
+                                    ),
+                                )
+                            })
+                    };
+                    h_flex()
+                        .gap_3()
+                        .py_2()
+                        .items_center()
+                        .when(position > 0, |row| {
+                            row.border_t_1().border_color(cx.theme().border)
+                        })
+                        .child(
+                            ph(instance.icon())
+                                .size_4()
+                                .text_color(cx.theme().muted_foreground),
+                        )
+                        .children(
+                            inputs
+                                .names
+                                .get(&id)
+                                .map(|name| div().flex_1().min_w_0().child(Input::new(name))),
+                        )
+                        .child(div().w(px(180.0)).child(group_menu))
+                        .child(
+                            Button::new(("instance-up", row))
+                                .icon(ph("arrow-up"))
+                                .tooltip("Move up")
+                                .ghost()
+                                .small()
+                                .disabled(position == 0)
+                                .on_click(shift(-1)),
+                        )
+                        .child(
+                            Button::new(("instance-down", row))
+                                .icon(ph("arrow-down"))
+                                .tooltip("Move down")
+                                .ghost()
+                                .small()
+                                .disabled(position + 1 == count)
+                                .on_click(shift(1)),
+                        )
+                        .child(
+                            Button::new(("instance-remove", row))
+                                .icon(ph("trash"))
+                                .tooltip("Remove from the list")
+                                .ghost()
+                                .small()
+                                .disabled(!removable)
+                                .when(!removable, |button| button.invisible())
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.remove_instance(instance.clone(), cx)
+                                })),
+                        )
+                })
+                .collect::<Vec<_>>();
+            v_flex()
+                .gap_2()
+                .children(header)
+                .child(card(cx).py_2().gap_0().children(rows))
         });
+        let sections = sections.collect::<Vec<_>>();
         div()
             .id("instances-page")
             .flex_1()
@@ -390,16 +575,16 @@ impl SetupView {
                     .p_6()
                     .child(heading(
                         "Instances",
-                        Some("Name, group and order the ricochet instances in the server menu. Instances with the same group show together."),
+                        Some("Name, order and group the ricochet instances in the server menu. The menu lists them the way this page does, under their group names."),
                         cx,
                     ))
-                    .child(card(cx).child(v_flex().children(rows)))
+                    .children(sections)
                     .child(
                         div()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
                             .child(prose(
-                                "Removing a machine only takes it off the list. ricochet keeps running there.",
+                                "You can remove any instance except this computer and the one that's showing. Removing a machine only takes it off the list, and ricochet keeps running there.",
                             )),
                     )
                     .child(
@@ -418,6 +603,20 @@ impl SetupView {
             )
             .into_any_element()
     }
+}
+
+/// A one-line text field holding `value`, which shows `placeholder` while empty.
+fn text_field(
+    value: String,
+    placeholder: String,
+    window: &mut Window,
+    cx: &mut Context<SetupView>,
+) -> Entity<InputState> {
+    cx.new(|cx| {
+        let mut input = InputState::new(window, cx).placeholder(placeholder);
+        input.set_value(value, window, cx);
+        input
+    })
 }
 
 /// A menu item with a line below its title that says what it does.

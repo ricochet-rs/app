@@ -144,6 +144,7 @@ impl Servers {
     }
 
     /// `instances` in the order you put them, those you never moved last, each with its placement.
+    /// Instances in one group follow each other, as the server menu lists them.
     pub fn arrange(&self, instances: Vec<Instance>) -> Vec<(Instance, Placement)> {
         let position = |id: &str| {
             self.layout
@@ -168,7 +169,10 @@ impl Servers {
             })
             .collect();
         arranged.sort_by_key(|(_, placement)| position(&placement.id));
-        arranged
+        Self::sections(arranged)
+            .into_iter()
+            .flat_map(|(_, entries)| entries)
+            .collect()
     }
 
     /// The arranged instances split into their groups, in the order each group first appears.
@@ -184,6 +188,14 @@ impl Servers {
         sections
     }
 
+    /// Writes down the order of `arranged`, so a change leaves the rest in place.
+    fn write_down(&mut self, arranged: &[(Instance, Placement)]) {
+        self.layout = arranged
+            .iter()
+            .map(|(_, placement)| placement.clone())
+            .collect();
+    }
+
     /// Changes an instance's placement, writing down the current order first so it stays put.
     pub fn place(
         &mut self,
@@ -191,27 +203,33 @@ impl Servers {
         id: &str,
         change: impl FnOnce(&mut Placement),
     ) {
-        self.layout = arranged
-            .iter()
-            .map(|(_, placement)| placement.clone())
-            .collect();
+        self.write_down(arranged);
         if let Some(placement) = self.layout.iter_mut().find(|p| p.id == id) {
             change(placement);
         }
     }
 
-    /// Moves an instance one place up (`-1`) or down (`1`) among `arranged`.
+    /// Moves an instance one place up (`-1`) or down (`1`) within its group.
     pub fn shift(&mut self, arranged: &[(Instance, Placement)], id: &str, offset: isize) {
-        self.layout = arranged
-            .iter()
-            .map(|(_, placement)| placement.clone())
-            .collect();
+        self.write_down(arranged);
         let Some(from) = self.layout.iter().position(|p| p.id == id) else {
             return;
         };
         let to = from as isize + offset;
-        if (0..self.layout.len() as isize).contains(&to) {
+        if (0..self.layout.len() as isize).contains(&to)
+            && self.layout[to as usize].group == self.layout[from].group
+        {
             self.layout.swap(from, to as usize);
+        }
+    }
+
+    /// Renames the group `from` to `to` for every instance in it.
+    pub fn rename_group(&mut self, arranged: &[(Instance, Placement)], from: &str, to: &str) {
+        self.write_down(arranged);
+        for placement in &mut self.layout {
+            if placement.group.as_deref() == Some(from) {
+                placement.group = Some(to.to_owned());
+            }
         }
     }
 
@@ -289,6 +307,54 @@ mod tests {
         assert_eq!(sections[1].1[0].1.name.as_deref(), Some("Client box"));
         let text = serde_json::to_string(&servers).unwrap();
         assert_eq!(serde_json::from_str::<Servers>(&text).unwrap(), servers);
+    }
+
+    #[test]
+    fn instances_move_within_their_group() {
+        let local = Instance::Machine(Connection::Local);
+        let devbox = Instance::Machine(Connection::Ssh {
+            host: "devbox".into(),
+        });
+        let remote = Instance::Added(Server::remote("https://a.example.com"));
+        let all = || vec![local.clone(), devbox.clone(), remote.clone()];
+        let mut servers = Servers::default();
+        for instance in [&local, &remote] {
+            let arranged = servers.arrange(all());
+            servers.place(&arranged, &instance.id(), |p| {
+                p.group = Some("Clients".into())
+            });
+        }
+        let arranged = servers.arrange(all());
+        let order: Vec<String> = arranged.iter().map(|(i, _)| i.id()).collect();
+        assert_eq!(order, [local.id(), remote.id(), devbox.id()]);
+        servers.shift(&arranged, &devbox.id(), -1);
+        let arranged = servers.arrange(all());
+        let order: Vec<String> = arranged.iter().map(|(i, _)| i.id()).collect();
+        assert_eq!(order, [local.id(), remote.id(), devbox.id()]);
+        servers.shift(&arranged, &remote.id(), -1);
+        let arranged = servers.arrange(all());
+        let order: Vec<String> = arranged.iter().map(|(i, _)| i.id()).collect();
+        assert_eq!(order, [remote.id(), local.id(), devbox.id()]);
+    }
+
+    #[test]
+    fn renaming_a_group_renames_it_for_each_instance() {
+        let local = Instance::Machine(Connection::Local);
+        let remote = Instance::Added(Server::remote("https://a.example.com"));
+        let all = || vec![local.clone(), remote.clone()];
+        let mut servers = Servers::default();
+        for instance in [&local, &remote] {
+            let arranged = servers.arrange(all());
+            servers.place(&arranged, &instance.id(), |p| {
+                p.group = Some("Clients".into())
+            });
+        }
+        let arranged = servers.arrange(all());
+        servers.rename_group(&arranged, "Clients", "Customers");
+        let sections = Servers::sections(servers.arrange(all()));
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].0.as_deref(), Some("Customers"));
+        assert_eq!(sections[0].1.len(), 2);
     }
 
     #[test]

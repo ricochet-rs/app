@@ -973,9 +973,14 @@ impl SetupView {
         if self.onboarding.is_some() {
             return;
         }
-        if self.instance_inputs.is_some() {
-            self.instance_inputs = None;
+        if self.instance_inputs.take().is_some() {
+            // The Instances page has its own Done button, so the settings button opens the settings from there.
             self.instance_subscriptions.clear();
+            if !self.has_settings(cx) {
+                self.open_app_settings(window, cx);
+            } else {
+                self.select(self.section, cx);
+            }
             cx.notify();
         } else if self.app_settings.is_some() {
             self.close_app_settings(window, cx);
@@ -995,8 +1000,7 @@ impl SetupView {
         } else {
             "Ctrl+,"
         };
-        let open =
-            self.instance_inputs.is_some() || (!self.showing_content && self.has_settings(cx));
+        let open = self.instance_inputs.is_none() && !self.showing_content && self.has_settings(cx);
         let button = if !open {
             Button::new("settings")
                 .icon(ph("gear-six"))

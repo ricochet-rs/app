@@ -199,6 +199,19 @@ impl DashboardView {
         cx.notify();
     }
 
+    /// Renames the group `from` to `to` for every instance among `arranged` in it.
+    pub fn rename_group(
+        &mut self,
+        arranged: &[(Instance, Placement)],
+        from: &str,
+        to: &str,
+        cx: &mut Context<Self>,
+    ) {
+        self.store.rename_group(arranged, from, to);
+        self.store.save();
+        cx.notify();
+    }
+
     /// Forgets the name, group and place of a machine you removed.
     pub fn forget_placement(&mut self, id: &str, cx: &mut Context<Self>) {
         self.store.forget_placement(id);
