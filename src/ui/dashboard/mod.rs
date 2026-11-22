@@ -49,8 +49,8 @@ pub struct DashboardView {
     url_input: Entity<InputState>,
     adding_server: bool,
     add_problem: Option<String>,
-    /// The managed server and its status at the last load, to load again when either changes.
-    seen_managed: (Option<Server>, ServerStatus),
+    /// The managed server, its status and whether an operation runs on it, to load again when they change.
+    seen_managed: (Option<Server>, ServerStatus, bool),
     web: web::Web,
     /// Whether a menu drops over the content, so the web UI must hide to let it show.
     covered: bool,
@@ -70,8 +70,11 @@ impl DashboardView {
                 let seen = this.managed_state(cx);
                 if seen != this.seen_managed {
                     let showing_managed = this.active_server(cx).is_none_or(|s| s.managed);
+                    let (before, now) = (&this.seen_managed, &seen);
+                    let changed = (&before.0, before.1) != (&now.0, now.1);
+                    let waited = before.2 && !now.2 && matches!(this.content, Content::Loading);
                     this.seen_managed = seen;
-                    if showing_managed {
+                    if showing_managed && (changed || waited) {
                         this.load(cx);
                     }
                 }
@@ -90,7 +93,7 @@ impl DashboardView {
             url_input,
             adding_server: false,
             add_problem: None,
-            seen_managed: (None, ServerStatus::Stopped),
+            seen_managed: (None, ServerStatus::Stopped, false),
             web: web::Web::default(),
             covered: false,
             _subscriptions: subscriptions,
@@ -109,8 +112,13 @@ impl DashboardView {
             .then(|| Server::managed(&controller.connection, controller.dashboard()))
     }
 
-    fn managed_state(&self, cx: &App) -> (Option<Server>, ServerStatus) {
-        (self.managed_server(cx), self.server.read(cx).status)
+    fn managed_state(&self, cx: &App) -> (Option<Server>, ServerStatus, bool) {
+        let controller = self.server.read(cx);
+        (
+            self.managed_server(cx),
+            controller.status,
+            controller.activity.is_some(),
+        )
     }
 
     /// The servers you added by address.
@@ -243,10 +251,19 @@ impl DashboardView {
             cx.notify();
             return;
         };
-        if server.managed && self.server.read(cx).status != ServerStatus::Running {
-            self.content = Content::NotRunning;
-            cx.notify();
-            return;
+        if server.managed {
+            let controller = self.server.read(cx);
+            // Coming back while ricochet restarts waits for it, which the observer then loads.
+            if controller.activity.is_some() {
+                self.content = Content::Loading;
+                cx.notify();
+                return;
+            }
+            if controller.status != ServerStatus::Running {
+                self.content = Content::NotRunning;
+                cx.notify();
+                return;
+            }
         }
         self.show_web(server, cx);
     }
