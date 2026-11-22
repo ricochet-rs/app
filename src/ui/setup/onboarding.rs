@@ -21,7 +21,7 @@ const INSTALL_STAGES: [&str; 4] = [
     "Starting ricochet",
 ];
 
-const STEPS: usize = 4;
+const STEPS: usize = 3;
 const COMMUNITY_EDITION_DOCS: &str =
     "https://docs.ricochet.rs/latest/admin/pricing/5-community-edition/";
 const MACHINE_ROW_HEIGHT: f32 = 60.0;
@@ -41,10 +41,9 @@ impl Step {
     /// The position among the screens that count toward progress, or `None` for the ones that don't.
     fn number(self) -> Option<usize> {
         match self {
-            Self::Target => Some(1),
-            Self::SignIn => Some(2),
-            Self::License => Some(3),
-            Self::Review => Some(4),
+            Self::SignIn => Some(1),
+            Self::License => Some(2),
+            Self::Review => Some(3),
             _ => None,
         }
     }
@@ -132,7 +131,7 @@ impl SetupView {
     /// A step count over four bars that fill as the person moves through the choices.
     fn progress(&self, step: Step, cx: &Context<Self>) -> Div {
         let reached = step.number().unwrap_or(match step {
-            Step::Welcome => 0,
+            Step::Welcome | Step::Target => 0,
             _ => STEPS,
         });
         v_flex()
@@ -210,8 +209,8 @@ impl SetupView {
                 .gap_5()
                 .child(row(
                     "desktop",
-                    "Your machine or a server",
-                    "Run ricochet locally or on any Linux server you can SSH into.",
+                    "Right on your computer",
+                    "ricochet installs on this computer, ready for the content you publish.",
                 ))
                 .child(row(
                     "power",
@@ -675,7 +674,7 @@ impl SetupView {
                         )
                         .into_any_element(),
                 ),
-                Some(next("Get started", "arrow-right", Step::Target, None, cx).into_any_element()),
+                Some(next("Get started", "arrow-right", Step::SignIn, None, cx).into_any_element()),
             ),
             Step::Target => {
                 let chosen = self.chosen_target(cx);
@@ -704,7 +703,17 @@ impl SetupView {
                 )
             }
             Step::SignIn => (
-                Some(back(Step::Target, cx).into_any_element()),
+                Some(
+                    back(
+                        if self.server.read(cx).connection.is_remote() {
+                            Step::Target
+                        } else {
+                            Step::Welcome
+                        },
+                        cx,
+                    )
+                    .into_any_element(),
+                ),
                 Some(
                     next(
                         "Continue",
