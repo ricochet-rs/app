@@ -1,7 +1,7 @@
 //! The window: server controls on top, then a sidebar of panes beside the pane being edited.
 
 use super::components::{
-    callout, card, card_title, danger_button, error_alert, heading, prose, rule, segmented,
+    callout, card, card_title, danger_button, error_alert, field, heading, prose, rule, segmented,
     selection_mark, setting_row, tab_bar,
 };
 use super::dashboard::{DashboardView, InstallInstead};
@@ -106,7 +106,7 @@ pub struct SetupView {
     showing_content: bool,
     /// The fields of the Instances page while it is open.
     instance_inputs: Option<instances::InstanceInputs>,
-    /// The fields of the app settings page while it is open.
+    /// The fields of the App settings dialog while it is open.
     app_settings: Option<app_settings::AppSettingsInputs>,
     instance_subscriptions: Vec<Subscription>,
     /// The count of config reads from the computer being managed that the fields already show.
@@ -978,7 +978,7 @@ impl SetupView {
             self.instance_subscriptions.clear();
             cx.notify();
         } else if self.app_settings.is_some() {
-            self.close_app_settings(cx);
+            self.close_app_settings(window, cx);
         } else if !self.has_settings(cx) {
             self.open_app_settings(window, cx);
         } else if self.showing_content {
@@ -995,14 +995,14 @@ impl SetupView {
         } else {
             "Ctrl+,"
         };
-        let open = self.instance_inputs.is_some()
-            || self.app_settings.is_some()
-            || (!self.showing_content && self.has_settings(cx));
+        let open =
+            self.instance_inputs.is_some() || (!self.showing_content && self.has_settings(cx));
         let button = if !open {
             Button::new("settings")
-                .icon(ph("sliders-horizontal"))
+                .icon(ph("gear-six"))
+                .label("Settings")
                 .tooltip(format!("Settings ({shortcut})"))
-                .ghost()
+                .outline()
         } else {
             Button::new("settings")
                 .icon(ph("check"))
@@ -1146,18 +1146,6 @@ impl SetupView {
             return sidebar;
         }
         sidebar
-            .child(group_label("App"))
-            .child(
-                self.sidebar_row(
-                    "app-settings",
-                    "sliders-horizontal",
-                    "App settings",
-                    false,
-                    false,
-                    cx,
-                )
-                .on_click(cx.listener(|this, _, window, cx| this.open_app_settings(window, cx))),
-            )
             .child(group_label("Required"))
             .child(self.sidebar_item(
                 SetupSection::Authentication,
@@ -1449,18 +1437,6 @@ impl SetupView {
             |this, encryption, window, cx| {
                 this.config.email.encryption = encryption;
                 this.sync_email_port_hint(window, cx);
-                this.edited(cx);
-            },
-            window,
-            cx,
-        );
-        self.bind_select(
-            "proxy-mode",
-            ProxyMode::ALL,
-            ProxyMode::title,
-            |config| config.proxy.mode,
-            |this, mode, _, cx| {
-                this.config.proxy.mode = mode;
                 this.edited(cx);
             },
             window,
@@ -2591,40 +2567,75 @@ impl SetupView {
     fn proxy_pane(&self, cx: &mut Context<Self>) -> AnyElement {
         let mode = self.config.proxy.mode;
         let system_hint = if self.server.read(cx).connection.is_remote() {
-            "Use the proxy that `HTTPS_PROXY` names on that machine, if any."
+            "ricochet uses the proxy that `HTTPS_PROXY` names on that machine, if any."
         } else if cfg!(target_os = "macos") {
-            "Use the proxy set in System Settings under Network. A proxy configuration file (PAC) isn't read."
+            "ricochet uses the proxy set in System Settings under Network. A proxy configuration file (PAC) isn't read."
         } else if cfg!(windows) {
-            "Use the proxy set in Windows Settings under Network & internet. A setup script (PAC) isn't read."
+            "ricochet uses the proxy set in Windows Settings under Network & internet. A setup script (PAC) isn't read."
         } else {
-            "Use the proxy that `HTTPS_PROXY` names for this app, if any."
+            "ricochet uses the proxy that `HTTPS_PROXY` names for this app, if any."
         };
-        card(cx)
+        let modes = segmented(
+            "proxy-mode",
+            ProxyMode::ALL
+                .iter()
+                .map(|choice| (choice.title(), *choice == mode))
+                .collect(),
+            {
+                let view = cx.entity();
+                move |index, _, app| {
+                    view.update(app, |this, cx| {
+                        this.config.proxy.mode = ProxyMode::ALL[index];
+                        this.edited(cx);
+                    });
+                }
+            },
+        );
+        let muted = cx.theme().muted_foreground;
+        v_flex()
+            .gap_4()
             .max_w(px(760.0))
-            .child(self.choice(
-                "proxy-mode",
-                "Proxy",
-                Some(match mode {
-                    ProxyMode::System => system_hint,
-                    ProxyMode::Manual => "Send ricochet's downloads through the proxy below.",
-                    ProxyMode::Off => "Connect to the internet without a proxy.",
-                }),
-                cx,
-            ))
-            .when(mode == ProxyMode::Manual, |pane| {
-                pane.child(self.text_field(
-                    "Proxy address",
-                    "proxy.url",
-                    Some("The proxy's URL with its port, like http://proxy.example.com:8080."),
-                    cx,
-                ))
-                .child(self.text_field(
-                    "Bypass the proxy for",
-                    "proxy.bypass",
-                    Some("Hosts to reach directly, separated by commas. ricochet always reaches `localhost` directly."),
-                    cx,
-                ))
-            })
+            .child(
+                card(cx)
+                    .child(field(
+                        "Proxy",
+                        Some(
+                            match mode {
+                                ProxyMode::System => system_hint,
+                                ProxyMode::Manual => "ricochet and its downloads go through the proxy below.",
+                                ProxyMode::Off => "ricochet connects to the internet without a proxy.",
+                            }
+                            .to_owned(),
+                        ),
+                        modes,
+                        cx,
+                    ))
+                    .when(mode == ProxyMode::Manual, |pane| {
+                        pane.child(field(
+                            "Proxy address",
+                            Some("The proxy's URL with its port, like http://proxy.example.com:8080.".into()),
+                            self.input("proxy.url"),
+                            cx,
+                        ))
+                        .child(field(
+                            "Reach these hosts directly",
+                            Some("Separate hosts with commas. ricochet always reaches `localhost` directly.".into()),
+                            self.input("proxy.bypass"),
+                            cx,
+                        ))
+                    }),
+            )
+            .child(
+                h_flex()
+                    .gap_2()
+                    .p_3()
+                    .items_start()
+                    .bg(cx.theme().muted)
+                    .child(ph("info").size_4().text_color(muted))
+                    .child(div().flex_1().text_xs().text_color(muted).child(prose(
+                        "This proxy is for ricochet on this machine. The app reaches servers through its own proxy, under App settings in the server menu.",
+                    ))),
+            )
             .into_any_element()
     }
 
@@ -2693,8 +2704,9 @@ impl SetupView {
             .child(h_flex().flex_1().min_h_0().map(|body| {
                 if self.instance_inputs.is_some() {
                     body.child(self.instances_page(cx))
-                } else if self.app_settings.is_some() {
-                    body.child(self.app_settings_page(cx))
+                } else if self.showing_content && self.app_settings.is_some() {
+                    // The system draws the web UI above the window, so it stays out while the App settings dialog shows.
+                    body
                 } else if self.showing_content {
                     body.child(self.detail(cx))
                 } else {
