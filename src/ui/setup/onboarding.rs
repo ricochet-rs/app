@@ -2,6 +2,7 @@
 
 use super::{SetupView, Step};
 use crate::config::section::{Field as _, SettingsSection as _};
+use crate::connections::Connection;
 use crate::ui::components::{error_alert, field, prose};
 use crate::ui::icons::ph;
 use crate::ui::theme::Palette;
@@ -11,7 +12,7 @@ use gpui_component::Disableable as _;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::spinner::Spinner;
-use gpui_component::{ActiveTheme, Sizable as _, h_flex, v_flex};
+use gpui_component::{ActiveTheme, h_flex, v_flex};
 
 const INSTALL_STAGES: [&str; 4] = [
     "Checking your settings",
@@ -229,7 +230,7 @@ impl SetupView {
     fn target_step(&mut self, cx: &mut Context<Self>) -> (String, String, AnyElement) {
         let server = self.server.read(cx);
         let busy = server.activity.is_some();
-        let active = server.connection.clone();
+        let chosen = self.chosen_target(cx);
         let connecting = server.activity.clone();
         let choices = server.choices();
         let failure = server.failure.clone();
@@ -237,10 +238,10 @@ impl SetupView {
         let ring = cx.theme().ring;
         let hover = cx.theme().muted;
         let rows = choices.into_iter().enumerate().map(|(index, choice)| {
-            let selected = choice == active && !busy;
             let this_one = connecting
                 .as_deref()
                 .is_some_and(|a| a.ends_with(&choice.name()));
+            let selected = choice == chosen && !this_one;
             let remote = choice.is_remote();
             let (icon, detail) = if remote {
                 ("hard-drives", "Linux over SSH")
@@ -255,10 +256,7 @@ impl SetupView {
                     .text_color(ring)
                     .into_any_element()
             } else {
-                ph("arrow-right")
-                    .size_4()
-                    .text_color(cx.theme().muted_foreground)
-                    .into_any_element()
+                div().size_5().into_any_element()
             };
             let target = choice.clone();
             h_flex()
@@ -278,9 +276,8 @@ impl SetupView {
                 })
                 .on_click(cx.listener(move |this, _, _, cx| {
                     if this.server.read(cx).activity.is_none() {
-                        let target = target.clone();
-                        this.server
-                            .update(cx, |server, cx| server.switch(target, cx));
+                        this.target_choice = Some(target.clone());
+                        cx.notify();
                     }
                 }))
                 .child(
@@ -338,7 +335,7 @@ impl SetupView {
         let connect = Button::new("connect-host")
             .label("Connect")
             .icon(ph("arrow-right"))
-            .primary()
+            .outline()
             .disabled(busy)
             .on_click(cx.listener(|this, _, window, cx| {
                 let host = this.host_input.read(cx).value().trim().to_owned();
@@ -351,9 +348,8 @@ impl SetupView {
                 this.problem = None;
                 this.host_input
                     .update(cx, |input, cx| input.set_value("", window, cx));
-                this.server.update(cx, |server, cx| {
-                    server.switch(crate::connections::Connection::Ssh { host }, cx)
-                });
+                this.server
+                    .update(cx, |server, cx| server.switch(Connection::Ssh { host }, cx));
             }));
         (
             "Install location".into(),
@@ -392,28 +388,15 @@ impl SetupView {
                         .child(connect),
                     cx,
                 ))
-                .child(
-                    h_flex()
-                        .gap_3()
-                        .items_center()
-                        .child(
-                            div()
-                                .flex_1()
-                                .text_sm()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(prose("Already running ricochet somewhere? Connect to it by its address instead.")),
-                        )
-                        .child(
-                            Button::new("target-connect-server")
-                                .icon(ph("globe"))
-                                .label("Connect to a server")
-                                .outline()
-                                .small()
-                                .on_click(cx.listener(|this, _, _, cx| this.add_server(cx))),
-                        ),
-                )
                 .into_any_element(),
         )
+    }
+
+    /// The machine the install location step points at: the one picked there, or else the one managed now.
+    fn chosen_target(&self, cx: &Context<Self>) -> Connection {
+        self.target_choice
+            .clone()
+            .unwrap_or_else(|| self.server.read(cx).connection.clone())
     }
 
     fn license_step(&self, cx: &mut Context<Self>) -> (String, String, AnyElement) {
@@ -687,14 +670,39 @@ impl SetupView {
                             Button::new("connect-to-server")
                                 .icon(ph("globe"))
                                 .label("Connect to a server")
-                                .ghost()
+                                .outline()
                                 .on_click(cx.listener(|this, _, _, cx| this.add_server(cx))),
                         )
                         .into_any_element(),
                 ),
                 Some(next("Get started", "arrow-right", Step::Target, None, cx).into_any_element()),
             ),
-            Step::Target => (Some(back(Step::Welcome, cx).into_any_element()), None),
+            Step::Target => {
+                let chosen = self.chosen_target(cx);
+                let label = match &chosen {
+                    Connection::Local => "Use this machine".to_owned(),
+                    Connection::Ssh { host } => format!("Use {host}"),
+                };
+                (
+                    Some(back(Step::Welcome, cx).into_any_element()),
+                    Some(
+                        Button::new("wizard-use-target")
+                            .label(label)
+                            .icon(ph("arrow-right"))
+                            .primary()
+                            .loading(busy)
+                            .disabled(busy)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if this.server.read(cx).activity.is_none() {
+                                    let target = chosen.clone();
+                                    this.server
+                                        .update(cx, |server, cx| server.switch(target, cx));
+                                }
+                            }))
+                            .into_any_element(),
+                    ),
+                )
+            }
             Step::SignIn => (
                 Some(back(Step::Target, cx).into_any_element()),
                 Some(

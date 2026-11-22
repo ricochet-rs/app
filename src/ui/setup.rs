@@ -117,6 +117,8 @@ pub struct SetupView {
     machine_scroll: ScrollHandle,
     explorer_scroll: ScrollHandle,
     host_input: Entity<InputState>,
+    /// The machine picked on the install location step, or `None` for the one managed now.
+    target_choice: Option<Connection>,
     /// The first-run screen being shown, or `None` once setup is behind you.
     onboarding: Option<Step>,
     section: SetupSection,
@@ -191,6 +193,7 @@ impl SetupView {
             machine_scroll: ScrollHandle::default(),
             explorer_scroll: ScrollHandle::default(),
             host_input,
+            target_choice: None,
             section: SetupSection::Authentication,
             users_tab: UsersTab::Settings,
             logging_tab: LoggingTab::Settings,
@@ -742,6 +745,7 @@ impl SetupView {
         }
         self.problem = None;
         self.considering_managed = false;
+        self.target_choice = None;
         self.rebuild_rows(window, cx);
         self.sync_inputs(window, cx);
         self.onboarding = match (configured, self.onboarding) {
