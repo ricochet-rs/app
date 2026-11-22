@@ -1,25 +1,29 @@
-//! The app's own settings, which apply to every instance: the proxy it reaches servers and downloads through.
+//! The App settings dialog, for settings of the app itself rather than of an instance: the proxy it reaches servers and downloads through.
 
 use super::SetupView;
 use crate::config::section::{Field as _, SettingsSection as _};
 use crate::config::{ProxyMode, ProxySettings};
-use crate::ui::components::{card, card_title, field, heading, prose};
+use crate::ui::components::{card_title, field, prose, segmented};
 use crate::ui::icons::ph;
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, Entity, Subscription, Window, div};
-use gpui_component::button::{Button, ButtonVariants};
+use gpui::{Context, Entity, Subscription, Window, div, px};
+use gpui_component::WindowExt as _;
+use gpui_component::dialog::DialogButtonProps;
 use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::{ActiveTheme, Sizable, h_flex, v_flex};
+use gpui_component::{ActiveTheme, h_flex, v_flex};
 
-/// The fields of the app settings page while it is open.
+/// The fields of the App settings dialog while it is open.
 pub struct AppSettingsInputs {
+    _subscriptions: Vec<Subscription>,
     url: Entity<InputState>,
     bypass: Entity<InputState>,
-    _subscriptions: Vec<Subscription>,
 }
 
 impl SetupView {
     pub(super) fn open_app_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.app_settings.is_some() {
+            return;
+        }
         let saved = crate::settings::proxy_settings();
         let input =
             |value: String, placeholder: &str, window: &mut Window, cx: &mut Context<Self>| {
@@ -42,22 +46,41 @@ impl SetupView {
                 })
             })
             .collect();
-        self.instance_inputs = None;
-        self.instance_subscriptions.clear();
         self.app_settings = Some(AppSettingsInputs {
-            url,
-            bypass,
             _subscriptions: subscriptions,
+            url: url.clone(),
+            bypass: bypass.clone(),
+        });
+        let view = cx.entity();
+        let closed = view.downgrade();
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let closed = closed.clone();
+            dialog
+                .title(prose("App settings"))
+                .w(px(560.0))
+                .child(proxy_settings(&view, &url, &bypass, cx))
+                .footer(|ok, _, window, cx| vec![ok(window, cx)])
+                .button_props(DialogButtonProps::default().ok_text("Done"))
+                .on_ok(|_, _, _| true)
+                .on_close(move |_, _, cx| {
+                    if let Some(view) = closed.upgrade() {
+                        view.update(cx, |this, cx| {
+                            this.app_settings = None;
+                            cx.notify();
+                        });
+                    }
+                })
         });
         cx.notify();
     }
 
-    pub(super) fn close_app_settings(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn close_app_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.app_settings = None;
+        window.close_dialog(cx);
         cx.notify();
     }
 
-    /// Saves what the page shows, with `mode` when you picked a new one.
+    /// Saves what the dialog shows, with `mode` when you chose a new one.
     fn save_app_proxy(&mut self, mode: Option<ProxyMode>, cx: &mut Context<Self>) {
         let Some(inputs) = &self.app_settings else {
             return;
@@ -71,111 +94,96 @@ impl SetupView {
         crate::settings::set_proxy_settings(settings);
         cx.notify();
     }
+}
 
-    pub(super) fn app_settings_page(&self, cx: &mut Context<Self>) -> AnyElement {
-        let Some(inputs) = &self.app_settings else {
-            return div().into_any_element();
-        };
-        let settings = crate::settings::proxy_settings();
-        let mode = settings.mode;
-        let system_hint = if cfg!(target_os = "macos") {
-            "The app follows the proxy in System Settings under Network, including a proxy configuration file (PAC) for the web UI."
-        } else if cfg!(windows) {
-            "The app follows the proxy in Windows Settings under Network & internet, including a setup script (PAC) for the web UI."
-        } else {
-            "The app follows your desktop's proxy settings for the web UI, and `HTTPS_PROXY` for downloads."
-        };
-        let modes = h_flex()
-            .gap_1()
-            .children(ProxyMode::ALL.iter().map(|&choice| {
-                let button = Button::new(choice.raw()).label(choice.title()).small();
-                let button = if choice == mode {
-                    button.primary()
-                } else {
-                    button.outline()
-                };
-                button.on_click(
-                    cx.listener(move |this, _, _, cx| this.save_app_proxy(Some(choice), cx)),
-                )
-            }));
-        let problem = settings.problem();
-        let proxy = card(cx)
-            .child(card_title("Network proxy", cx))
-            .child(field(
-                "Proxy",
-                Some(
-                    match mode {
-                        ProxyMode::System => system_hint,
-                        ProxyMode::Manual => "The app reaches servers and downloads ricochet through this proxy. Servers on `localhost` are always reached directly.",
-                        ProxyMode::Off => "The app downloads ricochet without a proxy. The web UI still follows your system's proxy settings.",
-                    }
-                    .to_owned(),
-                ),
-                modes,
-                cx,
-            ))
-            .when(mode == ProxyMode::Manual, |card| {
-                card.child(field(
+/// The Network proxy section of the dialog, which reads the saved settings because the view is mid-render.
+fn proxy_settings(
+    view: &Entity<SetupView>,
+    url: &Entity<InputState>,
+    bypass: &Entity<InputState>,
+    cx: &mut gpui::App,
+) -> impl IntoElement {
+    let settings = crate::settings::proxy_settings();
+    let mode = settings.mode;
+    let system_hint = if cfg!(target_os = "macos") {
+        "The app follows the proxy in System Settings under Network, including a proxy configuration file (PAC) for the web UI."
+    } else if cfg!(windows) {
+        "The app follows the proxy in Windows Settings under Network & internet, including a setup script (PAC) for the web UI."
+    } else {
+        "The app follows your desktop's proxy settings for the web UI, and `HTTPS_PROXY` for downloads."
+    };
+    let modes = segmented(
+        "app-proxy-mode",
+        ProxyMode::ALL
+            .iter()
+            .map(|choice| (choice.title(), *choice == mode))
+            .collect(),
+        {
+            let view = view.clone();
+            move |index, _, cx| {
+                view.update(cx, |this, cx| {
+                    this.save_app_proxy(Some(ProxyMode::ALL[index]), cx)
+                })
+            }
+        },
+    );
+    let problem = settings
+        .problem()
+        .filter(|_| mode == ProxyMode::Manual && !settings.url.trimmed().is_empty());
+    let muted = cx.theme().muted_foreground;
+    v_flex()
+        .gap_5()
+        .child(
+            v_flex()
+                .gap_1p5()
+                .child(card_title("Network proxy", cx))
+                .child(div().text_sm().text_color(muted).child(prose(
+                    "Only needed when your network sends internet traffic through a proxy, as many company networks do. The app uses it to download ricochet and to reach servers you connect to by address.",
+                ))),
+        )
+        .child(field(
+            "Proxy",
+            Some(
+                match mode {
+                    ProxyMode::System => system_hint,
+                    ProxyMode::Manual => "The app reaches servers and downloads ricochet through the proxy below.",
+                    ProxyMode::Off => "The app downloads ricochet without a proxy. The web UI still follows your system's proxy settings.",
+                }
+                .to_owned(),
+            ),
+            modes,
+            cx,
+        ))
+        .when(mode == ProxyMode::Manual, |section| {
+            section
+                .child(field(
                     "Proxy address",
-                    Some("The proxy's URL with its port, like http://proxy.example.com:8080. The web UI can't sign in to a proxy, so a user name and password only reach downloads.".into()),
-                    Input::new(&inputs.url),
+                    Some("The proxy's URL with its port. A user name and password reach downloads only, because the web UI can't sign in to a proxy.".into()),
+                    Input::new(url),
                     cx,
                 ))
                 .child(field(
-                    "Bypass the proxy for",
-                    Some("Hosts to reach directly, separated by commas.".into()),
-                    Input::new(&inputs.bypass),
+                    "Reach these hosts directly",
+                    Some("Separate hosts with commas. Servers on this computer never go through the proxy.".into()),
+                    Input::new(bypass),
                     cx,
                 ))
-                .children(problem.filter(|_| !settings.url.trimmed().is_empty()).map(|problem| {
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().danger)
-                        .child(prose(problem))
-                }))
-            });
-        div()
-            .id("app-settings-page")
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .child(
-                v_flex()
-                    .gap_5()
-                    .p_6()
-                    .max_w(gpui::px(760.0))
-                    .child(heading(
-                        "App settings",
-                        Some("Settings for the app itself, which apply to every instance. Each machine the app manages also has a proxy for ricochet under Server in its own settings."),
-                        cx,
-                    ))
-                    .child(proxy)
-                    .child(
-                        card(cx).child(card_title("Instances", cx)).child(
-                            h_flex()
-                                .gap_3()
-                                .items_center()
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .text_sm()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child(prose("Name, group and order the instances in the server menu.")),
-                                )
-                                .child(
-                                    Button::new("app-manage-instances")
-                                        .icon(ph("sliders-horizontal"))
-                                        .label("Manage instances")
-                                        .outline()
-                                        .small()
-                                        .on_click(cx.listener(|this, _, window, cx| {
-                                            this.app_settings = None;
-                                            this.open_instances(window, cx);
-                                        })),
-                                ),
-                        ),
-                    ),
-            )
-            .into_any_element()
-    }
+        })
+        .children(problem.map(|problem| {
+            div()
+                .text_sm()
+                .text_color(cx.theme().danger)
+                .child(prose(problem))
+        }))
+        .child(
+            h_flex()
+                .gap_2()
+                .p_3()
+                .items_start()
+                .bg(cx.theme().muted)
+                .child(ph("info").size_4().text_color(muted))
+                .child(div().flex_1().text_xs().text_color(muted).child(prose(
+                    "Each machine the app manages has a proxy of its own for ricochet, under Server in its settings.",
+                ))),
+        )
 }
