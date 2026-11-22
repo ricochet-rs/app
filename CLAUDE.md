@@ -91,6 +91,7 @@ Open and close a managed machine's settings with ⌘, on macOS and Ctrl+, elsewh
 Defer the window update in an app-level action handler with `cx.defer`, because GPUI runs the handler while it holds the window and a nested `WindowHandle::update` fails silently.
 Open **App settings** with the same shortcut and button when the instance shown has no settings of its own, such as a server added by address, so the shortcut never does nothing.
 Hide the webview whenever something else must show over the content area, such as the server menu, because the system draws it above the GPUI window.
+Keep Cut, Copy, Paste and Select All in the app's Edit menu as `MenuItem::os_action` items bound to gpui-component's `input` actions, because WKWebView gets ⌘X, ⌘C, ⌘V and ⌘A only through the menu's `cut:`, `copy:`, `paste:` and `selectAll:`, and an item takes its shortcut from its action's key binding.
 Leave the web UI out of the workspace while the **App settings** dialog shows, rather than covering it, because the server menu uncovers the web UI when it closes, after the item that opened the dialog has run.
 Hand only `http` and `https` links from the webview to the browser, because content on the server can ask to open any URL.
 Keep the webview's cookies and storage in the app's data folder, because WebView2 can't write next to the program.
