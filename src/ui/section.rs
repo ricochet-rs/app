@@ -110,7 +110,7 @@ impl SetupSection {
             Self::AuditLog => Some("Manage audit log retention and storage."),
             Self::Telemetry => Some("Send traces to an OpenTelemetry collector over gRPC."),
             Self::Proxy => Some(
-                "The proxy ricochet uses to install packages and deploy from Git, and the app uses to download ricochet.",
+                "Only needed when this machine reaches the internet through a proxy. ricochet uses it to install R, Julia and Python packages and to deploy from Git, and the app uses it to download ricochet.",
             ),
             Self::DangerZone => Some("Browse ricochet's files, delete its data, or uninstall it."),
         }
