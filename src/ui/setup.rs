@@ -117,7 +117,7 @@ pub struct SetupView {
     machine_scroll: ScrollHandle,
     explorer_scroll: ScrollHandle,
     host_input: Entity<InputState>,
-    /// The machine picked on the install location step, or `None` for the one connected now.
+    /// The machine picked on the install location step, or `None` for the one managed now.
     target_choice: Option<Connection>,
     /// The first-run screen being shown, or `None` once setup is behind you.
     onboarding: Option<Step>,

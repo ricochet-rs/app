@@ -21,7 +21,7 @@ const INSTALL_STAGES: [&str; 4] = [
     "Starting ricochet",
 ];
 
-const STEPS: usize = 4;
+const STEPS: usize = 3;
 const COMMUNITY_EDITION_DOCS: &str =
     "https://docs.ricochet.rs/latest/admin/pricing/5-community-edition/";
 const MACHINE_ROW_HEIGHT: f32 = 60.0;
@@ -41,10 +41,9 @@ impl Step {
     /// The position among the screens that count toward progress, or `None` for the ones that don't.
     fn number(self) -> Option<usize> {
         match self {
-            Self::Target => Some(1),
-            Self::SignIn => Some(2),
-            Self::License => Some(3),
-            Self::Review => Some(4),
+            Self::SignIn => Some(1),
+            Self::License => Some(2),
+            Self::Review => Some(3),
             _ => None,
         }
     }
@@ -132,7 +131,7 @@ impl SetupView {
     /// A step count over four bars that fill as the person moves through the choices.
     fn progress(&self, step: Step, cx: &Context<Self>) -> Div {
         let reached = step.number().unwrap_or(match step {
-            Step::Welcome => 0,
+            Step::Welcome | Step::Target => 0,
             _ => STEPS,
         });
         v_flex()
@@ -210,8 +209,8 @@ impl SetupView {
                 .gap_5()
                 .child(row(
                     "desktop",
-                    "Your machine or a server",
-                    "Run ricochet locally or on any Linux server you can SSH into.",
+                    "Right on your computer",
+                    "ricochet installs on this computer, ready for the content you publish.",
                 ))
                 .child(row(
                     "power",
@@ -230,7 +229,7 @@ impl SetupView {
     fn target_step(&mut self, cx: &mut Context<Self>) -> (String, String, AnyElement) {
         let server = self.server.read(cx);
         let busy = server.activity.is_some();
-        let picked = self.picked_machine(cx);
+        let chosen = self.chosen_target(cx);
         let connecting = server.activity.clone();
         let choices = server.choices();
         let failure = server.failure.clone();
@@ -238,10 +237,10 @@ impl SetupView {
         let ring = cx.theme().ring;
         let hover = cx.theme().muted;
         let rows = choices.into_iter().enumerate().map(|(index, choice)| {
-            let selected = choice == picked && !busy;
             let this_one = connecting
                 .as_deref()
                 .is_some_and(|a| a.ends_with(&choice.name()));
+            let selected = choice == chosen && !this_one;
             let remote = choice.is_remote();
             let (icon, detail) = if remote {
                 ("hard-drives", "Linux over SSH")
@@ -256,10 +255,7 @@ impl SetupView {
                     .text_color(ring)
                     .into_any_element()
             } else {
-                ph("arrow-right")
-                    .size_4()
-                    .text_color(cx.theme().muted_foreground)
-                    .into_any_element()
+                div().size_5().into_any_element()
             };
             let target = choice.clone();
             h_flex()
@@ -351,9 +347,8 @@ impl SetupView {
                 this.problem = None;
                 this.host_input
                     .update(cx, |input, cx| input.set_value("", window, cx));
-                this.server.update(cx, |server, cx| {
-                    server.switch(crate::connections::Connection::Ssh { host }, cx)
-                });
+                this.server
+                    .update(cx, |server, cx| server.switch(Connection::Ssh { host }, cx));
             }));
         (
             "Install location".into(),
@@ -396,8 +391,8 @@ impl SetupView {
         )
     }
 
-    /// The machine highlighted on the install location step, which starts as the one connected now.
-    fn picked_machine(&self, cx: &Context<Self>) -> Connection {
+    /// The machine the install location step points at: the one picked there, or else the one managed now.
+    fn chosen_target(&self, cx: &Context<Self>) -> Connection {
         self.target_choice
             .clone()
             .unwrap_or_else(|| self.server.read(cx).connection.clone())
@@ -658,7 +653,7 @@ impl SetupView {
             Button::new("connect-to-server")
                 .icon(ph("globe"))
                 .label("Connect to a server")
-                .ghost()
+                .outline()
                 .on_click(cx.listener(|this, _, _, cx| this.add_server(cx)))
         };
         let c = &self.config;
@@ -680,11 +675,11 @@ impl SetupView {
                         .child(connect_to_server(cx))
                         .into_any_element(),
                 ),
-                Some(next("Get started", "arrow-right", Step::Target, None, cx).into_any_element()),
+                Some(next("Get started", "arrow-right", Step::SignIn, None, cx).into_any_element()),
             ),
             Step::Target => {
-                let picked = self.picked_machine(cx);
-                let label = match &picked {
+                let chosen = self.chosen_target(cx);
+                let label = match &chosen {
                     Connection::Local => "Use this machine".to_owned(),
                     Connection::Ssh { host } => format!("Use {host}"),
                 };
@@ -697,14 +692,15 @@ impl SetupView {
                             .into_any_element(),
                     ),
                     Some(
-                        Button::new("wizard-use-machine")
+                        Button::new("wizard-use-target")
                             .label(label)
                             .icon(ph("arrow-right"))
                             .primary()
+                            .loading(busy)
                             .disabled(busy)
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 if this.server.read(cx).activity.is_none() {
-                                    let target = picked.clone();
+                                    let target = chosen.clone();
                                     this.server
                                         .update(cx, |server, cx| server.switch(target, cx));
                                 }
@@ -714,7 +710,17 @@ impl SetupView {
                 )
             }
             Step::SignIn => (
-                Some(back(Step::Target, cx).into_any_element()),
+                Some(
+                    back(
+                        if self.server.read(cx).connection.is_remote() {
+                            Step::Target
+                        } else {
+                            Step::Welcome
+                        },
+                        cx,
+                    )
+                    .into_any_element(),
+                ),
                 Some(
                     next(
                         "Continue",
