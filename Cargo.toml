@@ -11,7 +11,7 @@ flate2 = "1.1.11"
 futures = "0.3.34"
 gpui = { version = "0.2.2", features = ["runtime_shaders"] }
 # The server's web UI runs in the system's webview: WKWebView on macOS, WebView2 on Windows and WebKitGTK on Linux.
-gpui-component = { version = "0.5.1", features = ["webview"] }
+gpui-component = { version = "0.11.0", features = ["webview"] }
 gpui-component-assets = "0.5.1"
 # GPUI's HTTP client pulls in xattr 0.2.3, which reads libc::ENOATTR on Linux, and libc 0.2.190 removed it.
 libc = ">=0.2.182, <0.2.190"
