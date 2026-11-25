@@ -21,11 +21,14 @@ pub struct InstallInstead;
 
 impl gpui::EventEmitter<InstallInstead> for DashboardView {}
 
-/// An edit to an instance on the Instances page.
+/// An edit to an instance on the All instances page.
 pub enum InstanceChange {
     Name(String),
-    Group(String),
-    Move(isize),
+    /// Into a group, or no group, just before another instance or at the group's end.
+    Move {
+        group: Option<String>,
+        before: Option<String>,
+    },
 }
 
 /// What the dashboard knows about the server it shows.
@@ -190,11 +193,34 @@ impl DashboardView {
         };
         match change {
             InstanceChange::Name(name) => self.store.place(arranged, id, |p| p.name = blank(name)),
-            InstanceChange::Group(group) => {
-                self.store.place(arranged, id, |p| p.group = blank(group))
+            InstanceChange::Move { group, before } => {
+                self.store
+                    .move_to(arranged, id, group.and_then(blank), before.as_deref())
             }
-            InstanceChange::Move(offset) => self.store.shift(arranged, id, offset),
         }
+        self.store.save();
+        cx.notify();
+    }
+
+    /// The groups you made that hold none of `arranged`.
+    pub fn empty_groups(&self, arranged: &[(Instance, Placement)]) -> Vec<String> {
+        self.store.empty_groups(arranged)
+    }
+
+    /// Adds an empty group and returns its name.
+    pub fn add_group(
+        &mut self,
+        arranged: &[(Instance, Placement)],
+        cx: &mut Context<Self>,
+    ) -> String {
+        let name = self.store.add_group(arranged);
+        self.store.save();
+        cx.notify();
+        name
+    }
+
+    pub fn remove_group(&mut self, name: &str, cx: &mut Context<Self>) {
+        self.store.remove_group(name);
         self.store.save();
         cx.notify();
     }
