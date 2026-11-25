@@ -112,6 +112,7 @@ pub fn apply(window: Option<&mut Window>, cx: &mut App) {
     c.link = RING.pick(dark);
     c.title_bar = BACKGROUND.pick(dark);
     c.title_bar_border = BORDER.pick(dark);
+    c.overlay = gpui::black().opacity(if dark { 0.6 } else { 0.4 });
     theme.radius = Pixels::ZERO;
     theme.radius_lg = Pixels::ZERO;
     theme.shadow = false;

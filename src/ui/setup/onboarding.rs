@@ -649,6 +649,13 @@ impl SetupView {
                     }
                 }))
         };
+        let connect_to_server = |cx: &mut Context<Self>| {
+            Button::new("connect-to-server")
+                .icon(ph("globe"))
+                .label("Connect to a server")
+                .outline()
+                .on_click(cx.listener(|this, _, _, cx| this.add_server(cx)))
+        };
         let c = &self.config;
         let (left, right): (Option<AnyElement>, Option<AnyElement>) = match step {
             Step::Welcome => (
@@ -665,13 +672,7 @@ impl SetupView {
                                     cx.notify();
                                 })),
                         )
-                        .child(
-                            Button::new("connect-to-server")
-                                .icon(ph("globe"))
-                                .label("Connect to a server")
-                                .outline()
-                                .on_click(cx.listener(|this, _, _, cx| this.add_server(cx))),
-                        )
+                        .child(connect_to_server(cx))
                         .into_any_element(),
                 ),
                 Some(next("Get started", "arrow-right", Step::SignIn, None, cx).into_any_element()),
@@ -683,7 +684,13 @@ impl SetupView {
                     Connection::Ssh { host } => format!("Use {host}"),
                 };
                 (
-                    Some(back(Step::Welcome, cx).into_any_element()),
+                    Some(
+                        h_flex()
+                            .gap_2()
+                            .child(back(Step::Welcome, cx))
+                            .child(connect_to_server(cx))
+                            .into_any_element(),
+                    ),
                     Some(
                         Button::new("wizard-use-target")
                             .label(label)
@@ -722,6 +729,7 @@ impl SetupView {
                         self.sign_in_problem(),
                         cx,
                     )
+                    .disabled(self.awaiting_agreement())
                     .into_any_element(),
                 ),
             ),

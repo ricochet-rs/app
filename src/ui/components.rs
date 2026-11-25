@@ -45,12 +45,12 @@ impl Prose {
 
 impl RenderOnce for Prose {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let (text, mono_ranges) = mono_spans(&self.text);
+        let (text, mono_ranges, bold_ranges) = styled_spans(&self.text);
         let link = self.link.and_then(|(words, url)| {
             text.find(words)
                 .map(|start| (start..start + words.len(), url))
         });
-        if mono_ranges.is_empty() && link.is_none() {
+        if mono_ranges.is_empty() && bold_ranges.is_empty() && link.is_none() {
             return StyledText::new(text).into_any_element();
         }
         let style = window.text_style();
@@ -62,6 +62,7 @@ impl RenderOnce for Prose {
         let mut cuts = vec![0, text.len()];
         for range in mono_ranges
             .iter()
+            .chain(&bold_ranges)
             .chain(link.iter().map(|(range, _)| range))
         {
             cuts.extend([range.start, range.end]);
@@ -78,6 +79,9 @@ impl RenderOnce for Prose {
                 let mut run = style.to_run(end - start);
                 if mono_ranges.iter().any(|r| covers(r, start, end)) {
                     run.font = mono.clone();
+                }
+                if bold_ranges.iter().any(|r| covers(r, start, end)) {
+                    run.font.weight = gpui::FontWeight::SEMIBOLD;
                 }
                 if link.as_ref().is_some_and(|(r, _)| covers(r, start, end)) {
                     run.color = link_color;
@@ -104,25 +108,32 @@ impl RenderOnce for Prose {
 
 const BRAND: &str = "ricochet";
 
-/// The text with its backticks removed, and the ranges of it to set in the monospace font.
-fn mono_spans(source: &str) -> (String, Vec<Range<usize>>) {
+/// The text with its backticks and `**` markers removed, and the ranges of it to set in the monospace font and in bold.
+fn styled_spans(source: &str) -> (String, Vec<Range<usize>>, Vec<Range<usize>>) {
     let mut text = String::with_capacity(source.len());
-    let mut ranges = Vec::new();
+    let mut mono = Vec::new();
+    let mut bold = Vec::new();
     for (index, part) in source.split('`').enumerate() {
-        let start = text.len();
         if index % 2 == 1 {
+            let start = text.len();
             text.push_str(part);
-            ranges.push(start..text.len());
+            mono.push(start..text.len());
             continue;
         }
-        let mut part = part.to_owned();
-        for range in brand_ranges(&part) {
-            part.replace_range(range.clone(), BRAND);
-            ranges.push(start + range.start..start + range.end);
+        for (index, part) in part.split("**").enumerate() {
+            let start = text.len();
+            let mut part = part.to_owned();
+            for range in brand_ranges(&part) {
+                part.replace_range(range.clone(), BRAND);
+                mono.push(start + range.start..start + range.end);
+            }
+            text.push_str(&part);
+            if index % 2 == 1 {
+                bold.push(start..text.len());
+            }
         }
-        text.push_str(&part);
     }
-    (text, ranges)
+    (text, mono, bold)
 }
 
 /// Where `ricochet` stands as a word of its own, rather than inside a path, host, file or command name.
@@ -441,9 +452,19 @@ mod tests {
 
     #[test]
     fn strips_backticks_and_marks_their_spans() {
-        let (text, ranges) = mono_spans("Use `localhost` so Ricochet answers.");
+        let (text, ranges, _) = styled_spans("Use `localhost` so Ricochet answers.");
         assert_eq!(text, "Use localhost so ricochet answers.");
         let marked: Vec<&str> = ranges.into_iter().map(|r| &text[r]).collect();
         assert_eq!(marked, ["localhost", "ricochet"]);
+    }
+
+    #[test]
+    fn strips_double_asterisks_and_marks_their_spans() {
+        let (text, mono, bold) = styled_spans("Select **I agree** so ricochet keeps `a**b`.");
+        assert_eq!(text, "Select I agree so ricochet keeps a**b.");
+        let bolded: Vec<&str> = bold.into_iter().map(|r| &text[r]).collect();
+        assert_eq!(bolded, ["I agree"]);
+        let marked: Vec<&str> = mono.into_iter().map(|r| &text[r]).collect();
+        assert_eq!(marked, ["ricochet", "a**b"]);
     }
 }

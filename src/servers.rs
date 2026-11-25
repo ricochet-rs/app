@@ -103,6 +103,9 @@ pub struct Servers {
     /// Every instance you named, grouped or moved, in the order you put them.
     #[serde(default)]
     layout: Vec<Placement>,
+    /// Every group you made or moved an instance into, so a group stays when it is empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    groups: Vec<String>,
 }
 
 impl Servers {
@@ -209,18 +212,36 @@ impl Servers {
         }
     }
 
-    /// Moves an instance one place up (`-1`) or down (`1`) within its group.
-    pub fn shift(&mut self, arranged: &[(Instance, Placement)], id: &str, offset: isize) {
+    /// Moves an instance into `group`, just before the instance `before`, or after the group's last instance.
+    pub fn move_to(
+        &mut self,
+        arranged: &[(Instance, Placement)],
+        id: &str,
+        group: Option<String>,
+        before: Option<&str>,
+    ) {
         self.write_down(arranged);
         let Some(from) = self.layout.iter().position(|p| p.id == id) else {
             return;
         };
-        let to = from as isize + offset;
-        if (0..self.layout.len() as isize).contains(&to)
-            && self.layout[to as usize].group == self.layout[from].group
+        let mut placement = self.layout.remove(from);
+        placement.group = group;
+        if let Some(group) = &placement.group
+            && !self.groups.contains(group)
         {
-            self.layout.swap(from, to as usize);
+            self.groups.push(group.clone());
         }
+        let at = before
+            .filter(|before| *before != id)
+            .and_then(|before| self.layout.iter().position(|p| p.id == before))
+            .or_else(|| {
+                self.layout
+                    .iter()
+                    .rposition(|p| p.group == placement.group)
+                    .map(|last| last + 1)
+            })
+            .unwrap_or(self.layout.len());
+        self.layout.insert(at, placement);
     }
 
     /// Renames the group `from` to `to` for every instance in it.
@@ -231,6 +252,45 @@ impl Servers {
                 placement.group = Some(to.to_owned());
             }
         }
+        for group in &mut self.groups {
+            if group == from {
+                *group = to.to_owned();
+            }
+        }
+    }
+
+    /// Adds an empty group with the first free name of "New group", "New group 2" and so on, and returns its name.
+    pub fn add_group(&mut self, arranged: &[(Instance, Placement)]) -> String {
+        let taken = |name: &str| {
+            self.groups.iter().any(|group| group == name)
+                || arranged
+                    .iter()
+                    .any(|(_, placement)| placement.group.as_deref() == Some(name))
+        };
+        let name = std::iter::once("New group".to_owned())
+            .chain((2..).map(|n| format!("New group {n}")))
+            .find(|name| !taken(name))
+            .unwrap_or_default();
+        self.groups.push(name.clone());
+        name
+    }
+
+    /// Forgets a group, which only an empty group should be.
+    pub fn remove_group(&mut self, name: &str) {
+        self.groups.retain(|group| group != name);
+    }
+
+    /// The groups you made that hold none of `arranged`, in the order you made them.
+    pub fn empty_groups(&self, arranged: &[(Instance, Placement)]) -> Vec<String> {
+        self.groups
+            .iter()
+            .filter(|group| {
+                !arranged
+                    .iter()
+                    .any(|(_, placement)| placement.group.as_ref() == Some(*group))
+            })
+            .cloned()
+            .collect()
     }
 
     /// Forgets the name, group and place of an instance you removed.
@@ -292,7 +352,7 @@ mod tests {
         let all = || vec![local.clone(), devbox.clone(), remote.clone()];
         let mut servers = Servers::default();
         let arranged = servers.arrange(all());
-        servers.shift(&arranged, &remote.id(), -1);
+        servers.move_to(&arranged, &remote.id(), None, Some(&devbox.id()));
         let arranged = servers.arrange(all());
         servers.place(&arranged, &devbox.id(), |p| {
             p.group = Some("Clients".into());
@@ -310,31 +370,39 @@ mod tests {
     }
 
     #[test]
-    fn instances_move_within_their_group() {
+    fn instances_move_into_a_group_before_another_or_at_its_end() {
         let local = Instance::Machine(Connection::Local);
         let devbox = Instance::Machine(Connection::Ssh {
             host: "devbox".into(),
         });
         let remote = Instance::Added(Server::remote("https://a.example.com"));
         let all = || vec![local.clone(), devbox.clone(), remote.clone()];
+        let order = |servers: &Servers| -> Vec<String> {
+            servers.arrange(all()).iter().map(|(i, _)| i.id()).collect()
+        };
+        let empty = |servers: &Servers| servers.empty_groups(&servers.arrange(all()));
+        let move_to =
+            |servers: &mut Servers, id: String, group: Option<&str>, before: Option<String>| {
+                let arranged = servers.arrange(all());
+                servers.move_to(&arranged, &id, group.map(str::to_owned), before.as_deref());
+            };
         let mut servers = Servers::default();
-        for instance in [&local, &remote] {
-            let arranged = servers.arrange(all());
-            servers.place(&arranged, &instance.id(), |p| {
-                p.group = Some("Clients".into())
-            });
-        }
-        let arranged = servers.arrange(all());
-        let order: Vec<String> = arranged.iter().map(|(i, _)| i.id()).collect();
-        assert_eq!(order, [local.id(), remote.id(), devbox.id()]);
-        servers.shift(&arranged, &devbox.id(), -1);
-        let arranged = servers.arrange(all());
-        let order: Vec<String> = arranged.iter().map(|(i, _)| i.id()).collect();
-        assert_eq!(order, [local.id(), remote.id(), devbox.id()]);
-        servers.shift(&arranged, &remote.id(), -1);
-        let arranged = servers.arrange(all());
-        let order: Vec<String> = arranged.iter().map(|(i, _)| i.id()).collect();
-        assert_eq!(order, [remote.id(), local.id(), devbox.id()]);
+        let group = servers.add_group(&[]);
+        assert_eq!(group, "New group");
+        assert_eq!(empty(&servers), [group.as_str()]);
+        move_to(&mut servers, local.id(), Some(&group), None);
+        move_to(&mut servers, remote.id(), Some(&group), None);
+        assert_eq!(order(&servers), [devbox.id(), local.id(), remote.id()]);
+        assert!(empty(&servers).is_empty());
+        move_to(&mut servers, remote.id(), Some(&group), Some(local.id()));
+        assert_eq!(order(&servers), [devbox.id(), remote.id(), local.id()]);
+        move_to(&mut servers, remote.id(), None, Some(devbox.id()));
+        move_to(&mut servers, local.id(), None, None);
+        assert_eq!(order(&servers), [remote.id(), devbox.id(), local.id()]);
+        assert_eq!(empty(&servers), [group.as_str()]);
+        assert_eq!(servers.add_group(&[]), "New group 2");
+        servers.remove_group(&group);
+        assert_eq!(empty(&servers), ["New group 2"]);
     }
 
     #[test]

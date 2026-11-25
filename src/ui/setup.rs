@@ -810,10 +810,15 @@ impl SetupView {
     }
 
     /// Starts the install, or opens the first pane that still needs an answer.
+    /// Whether managed auth is selected but **I agree** hasn't been selected yet.
+    fn awaiting_agreement(&self) -> bool {
+        self.considering_managed && !self.config.authentication.managed
+    }
+
     /// What stops the authentication answers from being saved, counting a managed choice still waiting for **I agree**.
     fn sign_in_problem(&self) -> Option<String> {
-        if self.considering_managed && !self.config.authentication.managed {
-            return Some("Select I agree to continue with managed authentication.".into());
+        if self.awaiting_agreement() {
+            return Some("Select **I agree** to continue with managed authentication.".into());
         }
         self.config.authentication.problem()
     }
@@ -978,7 +983,7 @@ impl SetupView {
             return;
         }
         if self.instance_inputs.take().is_some() {
-            // The Instances page has its own Done button, so the settings button opens the settings from there.
+            // The All instances page has no settings of its own, so the settings button opens the settings from there.
             self.instance_subscriptions.clear();
             if !self.has_settings(cx) {
                 self.open_app_settings(window, cx);
@@ -1624,9 +1629,6 @@ impl SetupView {
                             this.config.server.port =
                                 AuthenticationSettings::MANAGED_PORT.to_owned();
                             this.sync_inputs(window, cx);
-                            if this.onboarding == Some(Step::SignIn) {
-                                this.onboarding = Some(Step::License);
-                            }
                             this.edited(cx);
                         }))
                         .into_any_element()
