@@ -11,8 +11,9 @@ mod windows;
 
 /// A job in your login session, which the system starts at login and restarts when it exits.
 pub trait Service: Send + Sync {
-    /// Writes the job that runs ricochet-server, returning whether the file changed.
-    fn write_job(&self) -> Result<bool>;
+    /// Writes the job that runs ricochet-server with the extra `environment`, such as its proxy,
+    /// returning whether the job changed.
+    fn write_job(&self, environment: &[(String, String)]) -> Result<bool>;
     fn is_loaded(&self) -> bool;
     /// Loads the job, which starts it now and at every login.
     fn start(&self) -> Result<()>;
@@ -58,7 +59,7 @@ struct Unsupported;
 
 #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 impl Service for Unsupported {
-    fn write_job(&self) -> Result<bool> {
+    fn write_job(&self, _environment: &[(String, String)]) -> Result<bool> {
         Err(crate::error::AppError::UnsupportedPlatform)
     }
     fn is_loaded(&self) -> bool {

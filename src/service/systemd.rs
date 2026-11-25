@@ -53,7 +53,7 @@ fn text(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-fn render(paths: &Paths) -> String {
+fn render(paths: &Paths, extra: &[(String, String)]) -> String {
     let local_bin = paths.user_home.join(".local/bin");
     let uv_pythons = paths.user_home.join(".local/share/uv/python");
     let juliaup_bin = paths.user_home.join(".juliaup");
@@ -72,7 +72,11 @@ fn render(paths: &Paths) -> String {
         ("UV_PYTHON_INSTALL_DIR", text(&uv_pythons)),
         ("JULIAUP_DEPOT_PATH", text(&julia_depot)),
     ]
+    .map(|(name, value)| (name.to_owned(), value))
+    .into_iter()
+    .chain(extra.iter().cloned())
     .map(|(name, value)| format!("Environment={}", quote(&format!("{name}={value}"))))
+    .collect::<Vec<_>>()
     .join("\n");
     format!(
         "[Unit]\nDescription=ricochet server\n\n[Service]\nExecStart={binary} start --config {config}\nWorkingDirectory={home}\n{environment}\nRestart=on-failure\nStandardOutput=append:{stdout}\nStandardError=truncate:{stderr}\n\n[Install]\nWantedBy=default.target\n",
@@ -85,9 +89,9 @@ fn render(paths: &Paths) -> String {
 }
 
 impl Service for UserUnit {
-    fn write_job(&self) -> Result<bool> {
+    fn write_job(&self, environment: &[(String, String)]) -> Result<bool> {
         self.shell.create_dir_all(&self.paths.sandbox_home)?;
-        let contents = render(&self.paths);
+        let contents = render(&self.paths, environment);
         let file = self.unit();
         if self
             .shell
@@ -96,7 +100,8 @@ impl Service for UserUnit {
         {
             return Ok(false);
         }
-        self.shell.write(&file, contents.as_bytes(), false)?;
+        // Readable by its owner only, because a proxy in its environment can hold a password.
+        self.shell.write(&file, contents.as_bytes(), true)?;
         self.checked(&["daemon-reload"])?;
         Ok(true)
     }
@@ -189,7 +194,7 @@ mod tests {
     #[test]
     fn the_unit_names_the_binary_and_config() {
         let paths = Paths::under("/home/someone".into());
-        let unit = render(&paths);
+        let unit = render(&paths, &[]);
         assert!(unit.contains(r#"ExecStart="/home/someone/.local/bin/ricochet-server" start --config "/home/someone/.local/share/ricochet/ricochet-config.toml""#));
         assert!(unit.contains("WorkingDirectory=/home/someone/.local/share/ricochet\n"));
     }
@@ -207,9 +212,9 @@ mod tests {
             shell.clone(),
         );
 
-        assert!(unit.write_job().unwrap());
+        assert!(unit.write_job(&[]).unwrap());
         assert!(
-            !unit.write_job().unwrap(),
+            !unit.write_job(&[]).unwrap(),
             "an unchanged unit is not rewritten"
         );
         let reloads = shell
@@ -229,7 +234,7 @@ mod tests {
             Arc::new(Paths::linux("/home/someone".into())),
             shell.clone(),
         );
-        unit.write_job().unwrap();
+        unit.write_job(&[]).unwrap();
         unit.remove().unwrap();
         assert!(shell.files.lock().unwrap().is_empty());
     }

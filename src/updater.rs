@@ -65,12 +65,9 @@ pub fn can_update() -> bool {
 /// The newest published release when it is newer than this build and has a file for this platform.
 pub fn check() -> Result<Option<Update>> {
     let fail = || AppError::Download("the list of app releases".into());
-    let mut response = ureq::get(LATEST_RELEASE)
+    let mut response = crate::net::download(LATEST_RELEASE, Duration::from_secs(15))
         .header("Accept", "application/vnd.github+json")
         .header("User-Agent", "ricochet-app")
-        .config()
-        .timeout_global(Some(Duration::from_secs(15)))
-        .build()
         .call()
         .map_err(|_| fail())?;
     let mut body = String::new();

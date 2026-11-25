@@ -18,6 +18,12 @@ If authentication, synchronization, HEAD validation, or a required read fails, s
 The app is a simple way to install ricochet's Community Edition for local development, and to install and configure ricochet on remote Linux hosts over SSH.
 It builds for Apple Silicon macOS, x86_64 Linux and x86_64 Windows.
 Never write a `[backend]` section, because content runs as processes on the machine and Kubernetes and containers are out of scope.
+The content area in `src/ui/dashboard/` shows a server's own web UI, for the managed server and for any server added by address.
+List managed machines and added servers in the one server menu of `SetupView`, and show settings only for a managed machine, so the window never has two switchers that both mean "which server".
+List only the machines you connected to in that menu, never every host in the SSH config, which only the add-machine step offers.
+Keep that menu open while the managed server starts, stops or restarts, and disable only the other managed machines in it, because the controller runs one operation on one backend and a switch would apply its result to the wrong machine.
+End that menu with **Connect to a server**, which adds a running server by its address, and **Install ricochet**, which installs ricochet on this computer or an SSH host, and give each managed machine's row a **Settings** button, because people otherwise can't tell how to add another machine or reach a machine's settings once ricochet is installed.
+Arrange instances on the **All instances** page by dragging rows between groups, and keep the groups you made in `servers.json` even when empty, because a group exists only through its instances otherwise and vanishes as you drag its last one out.
 Offer OpenID Connect and Entra only: ricochet refuses a SAML assertion consumer URL that is not `https`, and the server here serves `http://localhost`.
 
 ## App
@@ -46,6 +52,19 @@ Write a key only when it differs from ricochet's default, so a later ricochet de
 Show ricochet's own default R repository, `CRAN = https://cran.rpkgs.com`, in the form but never write it, so the person can save it as is.
 Sort R repositories by name when saving, because ricochet reads them in name order.
 
+## Proxy
+
+Keep each managed machine's proxy in `[desktop.proxy]` of its `ricochet-config.toml`, a table ricochet ignores, because ricochet has no proxy setting and a remote host can sit behind a different proxy than this computer.
+Write nothing for the system choice, so a config without the table follows the machine's own settings.
+Give ricochet's service `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` in both cases, through the launchd job, the systemd unit or the Windows launcher's `--env` arguments, because launchd, systemd and the `Run` entry start it without the proxy variables of a shell, and R, Python and Git read them from the environment.
+Keep the proxy out of command lines and world-readable files, because its URL can hold a password: write the launchd job and the systemd unit readable by their owner only, and hand it to a remote install through stdin.
+Always put `localhost`, `127.0.0.1` and `::1` in `NO_PROXY`, and reach ricochet's health check without a proxy, because the app and ricochet talk to each other on this machine.
+Read the system proxy from `scutil --proxy` on macOS, the `Internet Settings` registry key on Windows, and `HTTPS_PROXY` elsewhere, including a login shell on an SSH host; PAC files aren't read.
+Keep the app's own proxy in `settings.json` next to `servers.json`, readable by its owner only, and show it in the **App settings** dialog, which the server menu opens, because the app may need a proxy to reach a server before any machine is set up.
+Send the app's own downloads through `net::download`, which uses that setting.
+Leave the webview on the operating system's proxy, which already handles PAC, unless you entered a proxy yourself.
+Keep two webviews, one direct and one through the proxy you entered, each with its own data folder and, on macOS, its own data store, because WebView2 takes a proxy only when its environment starts, WKWebView and WebKitGTK keep it in the shared store, and ricochet on `localhost` must never go through it.
+
 ## Authentication
 
 Save managed auth only after the person selects **I agree**, because you share your name and email address with ricochet when you sign in through it.
@@ -61,6 +80,24 @@ Never let the profile write `~/Library/LaunchAgents` or `~/.local/bin`, because 
 Pass folders to the profile as `-D` parameters rather than writing them into its text, so a path never needs SBPL escaping.
 Deny `file-read-data` under `/Users`, never `file-read*`, because R and Python resolve a path by reading the metadata of every parent folder.
 Set `HOME` inside ricochet's folder, and point `JULIAUP_DEPOT_PATH` and `UV_PYTHON_INSTALL_DIR` at the real ones, because the server finds juliaup's Julia installs and uv's Pythons through them.
+
+## Content
+
+Show a server's own web UI in the system webview through gpui-component's `webview` feature, WKWebView on macOS, WebView2 on Windows and WebKitGTK on Linux, so the app and the server share one UI and every page works through a browser session.
+Run the app on X11 on Linux, through XWayland under Wayland, and start GTK before GPUI in `linux_webview::prepare`, because wry embeds WebKitGTK only in an X11 window.
+Advance GTK's loop from a GPUI timer while the webview exists, because GPUI doesn't run it and WebKitGTK paints nothing without it.
+Hand wry an Xlib handle on Linux, because GPUI gives out an XCB one and wry accepts only Xlib; both name the same X window.
+Put the app's own controls, the server menu, the managed server's status and its actions, in the title bar beside the window buttons on macOS and Windows, and leave the rest of the window to the web UI.
+Open and close a managed machine's settings with ⌘, on macOS and Ctrl+, elsewhere, the **Settings…** item in the app menu and the title bar's settings button, through the `ToggleSettings` action registered on the app, because a key binding inside the window never fires while the webview has focus.
+Defer the window update in an app-level action handler with `cx.defer`, because GPUI runs the handler while it holds the window and a nested `WindowHandle::update` fails silently.
+Open **App settings** with the same shortcut and button when the instance shown has no settings of its own, such as a server added by address, so the shortcut never does nothing.
+Hide the webview whenever something else must show over the content area, such as the server menu, because the system draws it above the GPUI window.
+Keep Cut, Copy, Paste and Select All in the app's Edit menu as `MenuItem::os_action` items bound to gpui-component's `input` actions, because WKWebView gets ⌘X, ⌘C, ⌘V and ⌘A only through the menu's `cut:`, `copy:`, `paste:` and `selectAll:`, and an item takes its shortcut from its action's key binding.
+Leave the web UI out of the workspace while the **App settings** dialog shows, rather than covering it, because the server menu uncovers the web UI when it closes, after the item that opened the dialog has run.
+Hand only `http` and `https` links from the webview to the browser, because content on the server can ask to open any URL.
+Keep the webview's cookies and storage in the app's data folder, because WebView2 can't write next to the program.
+Open a managed SSH server's tunnel through `Backend::reach_dashboard` before showing its web UI, because the server answers on `localhost` only while the tunnel is up.
+Link the AppImage against the system's GTK and WebKitGTK instead of bundling them, because WebKitGTK starts helper processes from fixed paths and needs the system's GLib.
 
 ## Uninstall
 

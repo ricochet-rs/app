@@ -1,24 +1,28 @@
 //! The window: server controls on top, then a sidebar of panes beside the pane being edited.
 
 use super::components::{
-    callout, card, card_title, danger_button, error_alert, heading, prose, rule, segmented,
+    callout, card, card_title, danger_button, error_alert, field, heading, prose, rule, segmented,
     selection_mark, setting_row, tab_bar,
 };
+use super::dashboard::{DashboardView, InstallInstead};
 use super::icons::ph;
 use super::section::SetupSection;
 use crate::config::section::{Field as _, SettingsSection as _};
 use crate::config::{
-    AuthenticationSettings, Encryption, LogLevel, LogRotation, PackageIndex, Provider, RRepository,
-    Role, ServerConfig,
+    AuthenticationSettings, Encryption, LogLevel, LogRotation, PackageIndex, Provider, ProxyMode,
+    RRepository, Role, ServerConfig,
 };
+use crate::connections::Connection;
 use crate::controller::{Failure, ServerController, ServerStatus};
 use crate::person::Person;
+use crate::servers::Server;
 use crate::updater;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ClipboardItem, Context, Div, Entity, FontWeight, ScrollHandle, Subscription,
     Window, div, px,
 };
+use gpui_component::TitleBar;
 use gpui_component::button::{Button, ButtonVariant, ButtonVariants};
 use gpui_component::dialog::DialogButtonProps;
 use gpui_component::input::{Input, InputEvent, InputState};
@@ -31,7 +35,9 @@ use gpui_component::{
 };
 use std::collections::HashMap;
 
+mod app_settings;
 mod explorer;
+mod instances;
 mod logs;
 mod onboarding;
 
@@ -94,6 +100,15 @@ enum AppUpdate {
 
 pub struct SetupView {
     server: Entity<ServerController>,
+    /// The content of the server shown, managed or added by address.
+    dashboard: Entity<DashboardView>,
+    /// Whether the Content page shows instead of a settings pane.
+    showing_content: bool,
+    /// The fields of the Instances page while it is open.
+    instance_inputs: Option<instances::InstanceInputs>,
+    /// The fields of the App settings dialog while it is open.
+    app_settings: Option<app_settings::AppSettingsInputs>,
+    instance_subscriptions: Vec<Subscription>,
     /// The count of config reads from the computer being managed that the fields already show.
     seen_generation: u64,
     /// Whether to keep a remote ricochet running after you log out of that computer.
@@ -102,6 +117,8 @@ pub struct SetupView {
     machine_scroll: ScrollHandle,
     explorer_scroll: ScrollHandle,
     host_input: Entity<InputState>,
+    /// The machine picked on the install location step, or `None` for the one connected now.
+    target_choice: Option<Connection>,
     /// The first-run screen being shown, or `None` once setup is behind you.
     onboarding: Option<Step>,
     section: SetupSection,
@@ -162,14 +179,21 @@ impl SetupView {
         let log_following = std::rc::Rc::new(std::cell::Cell::new(true));
         let host_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("my-server or user@host"));
+        let dashboard = cx.new(|cx| DashboardView::new(server.clone(), window, cx));
+        let showing_added = dashboard.read(cx).added_server().is_some();
         let mut view = Self {
-            onboarding: first_run.then_some(Step::Welcome),
+            onboarding: (first_run && !showing_added).then_some(Step::Welcome),
+            showing_content: !first_run || showing_added,
+            instance_inputs: None,
+            app_settings: None,
+            instance_subscriptions: Vec::new(),
             seen_generation: 0,
             keep_running: true,
             page_scroll: ScrollHandle::default(),
             machine_scroll: ScrollHandle::default(),
             explorer_scroll: ScrollHandle::default(),
             host_input,
+            target_choice: None,
             section: SetupSection::Authentication,
             users_tab: UsersTab::Settings,
             logging_tab: LoggingTab::Settings,
@@ -202,26 +226,33 @@ impl SetupView {
             reload_explorer_when_idle: false,
             changing_role: false,
             app_update: AppUpdate::Current,
-            subscriptions: vec![cx.observe_in(&server, window, |this, server, window, cx| {
-                if this.reload_explorer_when_idle && server.read(cx).activity.is_none() {
-                    this.reload_explorer_when_idle = false;
-                    this.reload_explorer(cx);
-                }
-                if this.submitted && server.read(cx).activity.is_none() {
-                    this.submitted = false;
-                    if server.read(cx).failure.is_none() {
-                        this.saved_issuer = Some(this.config.authentication.issuer());
-                        if this.onboarding == Some(Step::Installing) {
-                            this.onboarding = Some(Step::Done);
+            subscriptions: vec![
+                cx.observe(&dashboard, |_, _, cx| cx.notify()),
+                cx.subscribe(&dashboard, |this, _, _: &InstallInstead, cx| {
+                    this.install_instead(cx)
+                }),
+                cx.observe_in(&server, window, |this, server, window, cx| {
+                    if this.reload_explorer_when_idle && server.read(cx).activity.is_none() {
+                        this.reload_explorer_when_idle = false;
+                        this.reload_explorer(cx);
+                    }
+                    if this.submitted && server.read(cx).activity.is_none() {
+                        this.submitted = false;
+                        if server.read(cx).failure.is_none() {
+                            this.saved_issuer = Some(this.config.authentication.issuer());
+                            if this.onboarding == Some(Step::Installing) {
+                                this.onboarding = Some(Step::Done);
+                            }
                         }
                     }
-                }
-                if server.read(cx).generation != this.seen_generation {
-                    this.show_computer(window, cx);
-                }
-                cx.notify();
-            })],
+                    if server.read(cx).generation != this.seen_generation {
+                        this.show_computer(window, cx);
+                    }
+                    cx.notify();
+                }),
+            ],
             row_subscriptions: Vec::new(),
+            dashboard,
             server,
         };
         view.register_inputs(window, cx);
@@ -468,6 +499,18 @@ impl SetupView {
             audit_log.retention_days
         );
         bind!(
+            "proxy.url",
+            "http://proxy.example.com:8080",
+            false,
+            proxy.url
+        );
+        bind!(
+            "proxy.bypass",
+            ".corp.example.com, intranet",
+            false,
+            proxy.bypass
+        );
+        bind!(
             "telemetry.endpoint",
             "http://localhost:4317",
             false,
@@ -632,6 +675,7 @@ impl SetupView {
 
     fn select(&mut self, section: SetupSection, cx: &mut Context<Self>) {
         self.section = section;
+        self.showing_content = false;
         if section == SetupSection::Users && self.users_tab == UsersTab::People {
             self.load_people(cx);
         }
@@ -641,6 +685,44 @@ impl SetupView {
             self.stop_following_logs();
         }
         cx.notify();
+    }
+
+    fn show_content(&mut self, cx: &mut Context<Self>) {
+        self.showing_content = true;
+        self.stop_following_logs();
+        cx.notify();
+    }
+
+    /// Shows a machine this app manages, connecting to it first when it is not the current one.
+    fn show_machine(&mut self, target: Connection, cx: &mut Context<Self>) {
+        let server = self.server.read(cx);
+        if target != server.connection && server.activity.is_some() {
+            return;
+        }
+        self.dashboard
+            .update(cx, |dashboard, cx| dashboard.show_managed(cx));
+        let server = self.server.read(cx);
+        if target != server.connection {
+            self.server
+                .update(cx, |server, cx| server.switch(target, cx));
+        } else if !server.is_configured {
+            self.onboarding = Some(Step::Welcome);
+        }
+        cx.notify();
+    }
+
+    fn show_added(&mut self, server: Server, cx: &mut Context<Self>) {
+        self.dashboard
+            .update(cx, |dashboard, cx| dashboard.show_server(&server, cx));
+        self.onboarding = None;
+        self.show_content(cx);
+    }
+
+    fn add_server(&mut self, cx: &mut Context<Self>) {
+        self.dashboard
+            .update(cx, |dashboard, cx| dashboard.start_adding(cx));
+        self.onboarding = None;
+        self.show_content(cx);
     }
 
     /// Shows the answers saved on the computer just connected to, and moves to whatever it needs next.
@@ -663,6 +745,7 @@ impl SetupView {
         }
         self.problem = None;
         self.considering_managed = false;
+        self.target_choice = None;
         self.rebuild_rows(window, cx);
         self.sync_inputs(window, cx);
         self.onboarding = match (configured, self.onboarding) {
@@ -727,10 +810,15 @@ impl SetupView {
     }
 
     /// Starts the install, or opens the first pane that still needs an answer.
+    /// Whether managed auth is selected but **I agree** hasn't been selected yet.
+    fn awaiting_agreement(&self) -> bool {
+        self.considering_managed && !self.config.authentication.managed
+    }
+
     /// What stops the authentication answers from being saved, counting a managed choice still waiting for **I agree**.
     fn sign_in_problem(&self) -> Option<String> {
-        if self.considering_managed && !self.config.authentication.managed {
-            return Some("Select I agree to continue with managed authentication.".into());
+        if self.awaiting_agreement() {
+            return Some("Select **I agree** to continue with managed authentication.".into());
         }
         self.config.authentication.problem()
     }
@@ -768,27 +856,42 @@ impl SetupView {
 
     // MARK: Controls
 
+    /// The app's own controls in the title bar: the server menu, the managed server's status and the actions on it.
     fn controls(&self, cx: &mut Context<Self>) -> Div {
+        let bar = h_flex()
+            .flex_1()
+            .h_full()
+            .gap_2()
+            .items_center()
+            .child(self.machine_menu(cx))
+            .children(self.browser_url(cx).map(|url| {
+                Button::new("open-in-browser")
+                    .icon(ph("arrow-square-out"))
+                    .tooltip("Open in browser")
+                    .ghost()
+                    .xsmall()
+                    .on_click(move |_, _, _| {
+                        let _ = open::that(&url);
+                    })
+            }));
+        if self.dashboard.read(cx).added_server().is_some() {
+            return bar.child(div().flex_1()).child(self.settings_button(cx));
+        }
         let server = self.server.read(cx);
         let busy = server.activity.is_some();
+        let checking = server.checking;
         let (label, color) = match server.status {
+            _ if checking => ("Checking", cx.theme().muted_foreground),
             ServerStatus::Running => ("Running", cx.theme().success),
             ServerStatus::Starting => ("Starting", cx.theme().warning),
             ServerStatus::Stopped => ("Stopped", cx.theme().muted_foreground),
             ServerStatus::NotInstalled => ("Not installed", cx.theme().muted_foreground),
         };
-        let checking = server.checking;
-        let (label, version) = if checking {
-            ("Checking", "\u{a0}".to_owned())
-        } else {
-            let version = server
-                .installed
-                .as_ref()
-                .map_or("\u{a0}".to_owned(), |release| {
-                    format!("Version {}", release.version)
-                });
-            (label, version)
-        };
+        let version = server
+            .installed
+            .as_ref()
+            .filter(|_| !checking)
+            .map(|release| release.version.to_string());
         let marker = if checking || busy {
             gpui_component::spinner::Spinner::new()
                 .xsmall()
@@ -800,161 +903,128 @@ impl SetupView {
                 .bg(color)
                 .into_any_element()
         };
-        let (running, stopped, configured) = (
-            server.status == ServerStatus::Running,
-            server.status == ServerStatus::Stopped,
-            server.is_configured,
-        );
+        let (stopped, configured) = (server.status == ServerStatus::Stopped, server.is_configured);
         let update = server.available_update();
-        let connection_name = server.connection.name();
-        let connection_icon = if server.connection.is_remote() {
-            "hard-drives"
-        } else {
-            "desktop"
-        };
         let server_entity = self.server.clone();
         let act = move |f: fn(&mut ServerController, &mut Context<ServerController>)| {
             let server = server_entity.clone();
             move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut App| server.update(cx, f)
         };
-
-        h_flex()
-            .gap_3()
-            .px_4()
-            .py_3()
-            .items_center()
-            .child(
-                v_flex()
-                    .gap_0p5()
-                    .child(
-                        div()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(prose("ricochet")),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(version),
-                    ),
-            )
-            .child(
-                h_flex()
-                    .gap_1p5()
-                    .px_2()
-                    .py_0p5()
-                    .items_center()
-                    .border_1()
-                    .border_color(cx.theme().border)
-                    .text_xs()
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(marker)
-                    .child(label),
-            )
-            .child(self.machine_menu(connection_icon, connection_name, cx))
-            .child(div().flex_1())
-            .children(update.map(|release| {
-                let server = self.server.clone();
-                Button::new("update")
-                    .icon(ph("arrow-circle-up"))
-                    .label(format!("Update to {}", release.version))
-                    .outline()
-                    .small()
-                    .disabled(busy)
-                    .on_click(move |_, _, cx| {
-                        server.update(cx, |server, cx| server.update_to(release.clone(), cx))
-                    })
-            }))
-            .when(configured, |row| {
-                row.child(
-                    Button::new("open")
-                        .icon(ph("arrow-square-out"))
-                        .label("Open")
-                        .primary()
-                        .small()
-                        .disabled(!running || busy)
-                        .on_click(act(|server, cx| server.open_dashboard(cx))),
-                )
-                .child(if stopped {
-                    Button::new("start")
-                        .icon(ph("play"))
-                        .tooltip("Start")
-                        .outline()
-                        .small()
-                        .disabled(busy)
-                        .on_click(act(|s, cx| s.start(cx)))
-                } else {
-                    Button::new("stop")
-                        .icon(ph("stop"))
-                        .tooltip("Stop")
-                        .outline()
-                        .small()
-                        .disabled(busy)
-                        .on_click(act(|s, cx| s.stop(cx)))
+        let muted = cx.theme().muted_foreground;
+        bar.child(
+            h_flex()
+                .gap_1p5()
+                .items_center()
+                .text_xs()
+                .child(marker)
+                .child(div().font_weight(FontWeight::MEDIUM).child(label))
+                .children(version.map(|version| div().text_color(muted).child(version))),
+        )
+        .child(div().flex_1())
+        .children(update.map(|release| {
+            let server = self.server.clone();
+            Button::new("update")
+                .icon(ph("arrow-circle-up"))
+                .label(format!("Update to {}", release.version))
+                .outline()
+                .xsmall()
+                .disabled(busy)
+                .on_click(move |_, _, cx| {
+                    server.update(cx, |server, cx| server.update_to(release.clone(), cx))
                 })
-                .child(
-                    Button::new("restart")
-                        .icon(ph("arrow-clockwise"))
-                        .tooltip("Restart")
-                        .outline()
-                        .small()
-                        .disabled(stopped || busy)
-                        .on_click(act(|s, cx| s.restart(cx))),
-                )
+        }))
+        .when(configured, |row| row.child(self.settings_button(cx)))
+        .when(configured, |row| {
+            row.child(if stopped {
+                Button::new("start")
+                    .icon(ph("play"))
+                    .tooltip("Start")
+                    .ghost()
+                    .xsmall()
+                    .disabled(busy)
+                    .on_click(act(|s, cx| s.start(cx)))
+            } else {
+                Button::new("stop")
+                    .icon(ph("stop"))
+                    .tooltip("Stop")
+                    .ghost()
+                    .xsmall()
+                    .disabled(busy)
+                    .on_click(act(|s, cx| s.stop(cx)))
             })
+            .child(
+                Button::new("restart")
+                    .icon(ph("arrow-clockwise"))
+                    .tooltip("Restart")
+                    .ghost()
+                    .xsmall()
+                    .disabled(stopped || busy)
+                    .on_click(act(|s, cx| s.restart(cx))),
+            )
+        })
     }
 
-    /// The computers you can switch to, shown under the bar while it is open.
-    /// The machine button, which drops a menu of every machine, a check on the current one, and **Add machine**.
-    fn machine_menu(
-        &self,
-        icon: &'static str,
-        name: String,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let server = self.server.read(cx);
-        let active = server.connection.clone();
-        let busy = server.activity.is_some();
-        let choices = server.choices();
-        let view = cx.entity();
-        Button::new("connection")
-            .icon(ph(icon))
-            .label(name)
-            .outline()
-            .small()
-            .disabled(busy)
-            .dropdown_menu(move |mut menu, _, _| {
-                for choice in &choices {
-                    let target = choice.clone();
-                    let view = view.clone();
-                    menu = menu.item(
-                        PopupMenuItem::new(choice.name())
-                            .icon(ph(if choice.is_remote() {
-                                "hard-drives"
-                            } else {
-                                "desktop"
-                            }))
-                            .checked(*choice == active)
-                            .on_click(move |_, _, cx| {
-                                let target = target.clone();
-                                view.update(cx, |this, cx| {
-                                    this.server
-                                        .update(cx, |server, cx| server.switch(target, cx));
-                                });
-                            }),
-                    );
-                }
-                let view = view.clone();
-                menu.separator()
-                    .item(PopupMenuItem::new("Add machine").icon(ph("plus")).on_click(
-                        move |_, _, cx| {
-                            view.update(cx, |this, cx| {
-                                this.onboarding = Some(Step::Target);
-                                cx.notify();
-                            });
-                        },
-                    ))
-            })
+    /// The address of the instance shown, when its web UI can open in the browser.
+    pub(super) fn browser_url(&self, cx: &App) -> Option<String> {
+        let server = self.dashboard.read(cx).active_server(cx)?;
+        let reachable = !server.managed || self.server.read(cx).status == ServerStatus::Running;
+        reachable.then_some(server.url)
+    }
+
+    /// Whether the instance shown has settings in this app: a managed machine, once ricochet is set up there.
+    fn has_settings(&self, cx: &App) -> bool {
+        self.dashboard.read(cx).added_server().is_none() && self.server.read(cx).is_configured
+    }
+
+    /// Opens the settings of the machine shown, or closes them again, as ⌘, does in a Mac app.
+    /// An instance without settings of its own, such as a server added by address, opens the app settings instead.
+    pub fn toggle_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.onboarding.is_some() {
+            return;
+        }
+        if self.instance_inputs.take().is_some() {
+            // The All instances page has no settings of its own, so the settings button opens the settings from there.
+            self.instance_subscriptions.clear();
+            if !self.has_settings(cx) {
+                self.open_app_settings(window, cx);
+            } else {
+                self.select(self.section, cx);
+            }
+            cx.notify();
+        } else if self.app_settings.is_some() {
+            self.close_app_settings(window, cx);
+        } else if !self.has_settings(cx) {
+            self.open_app_settings(window, cx);
+        } else if self.showing_content {
+            self.select(self.section, cx);
+        } else {
+            self.show_content(cx);
+        }
+    }
+
+    /// The title bar's settings button, which reads Done while the settings show.
+    fn settings_button(&self, cx: &mut Context<Self>) -> Button {
+        let shortcut = if cfg!(target_os = "macos") {
+            "⌘,"
+        } else {
+            "Ctrl+,"
+        };
+        let open = self.instance_inputs.is_none() && !self.showing_content && self.has_settings(cx);
+        let button = if !open {
+            Button::new("settings")
+                .icon(ph("gear-six"))
+                .label("Settings")
+                .tooltip(format!("Settings ({shortcut})"))
+                .outline()
+        } else {
+            Button::new("settings")
+                .icon(ph("check"))
+                .label("Done")
+                .primary()
+        };
+        button
+            .xsmall()
+            .on_click(cx.listener(|this, _, window, cx| this.toggle_settings(window, cx)))
     }
 
     // MARK: Sidebar
@@ -970,9 +1040,10 @@ impl SetupView {
         cx: &Context<Self>,
     ) -> gpui::Stateful<Div> {
         let accent = cx.theme().sidebar_accent;
+        let (primary, on_primary) = (cx.theme().primary, cx.theme().primary_foreground);
         h_flex()
             .id(id)
-            .h_7()
+            .h_8()
             .px_2()
             .gap_2()
             .items_center()
@@ -980,12 +1051,18 @@ impl SetupView {
             .cursor_pointer()
             .map(|row| {
                 if active {
-                    row.bg(accent).font_weight(FontWeight::MEDIUM)
+                    row.bg(primary)
+                        .text_color(on_primary)
+                        .font_weight(FontWeight::MEDIUM)
                 } else {
                     row.hover(move |row| row.bg(accent.opacity(0.8)))
                 }
             })
-            .child(ph(icon).size_4().text_color(cx.theme().muted_foreground))
+            .child(ph(icon).size_4().text_color(if active {
+                on_primary
+            } else {
+                cx.theme().muted_foreground
+            }))
             .child(div().flex_1().truncate().child(label))
             .when(needs_answer, |row| {
                 row.child(div().size(px(6.0)).rounded_full().bg(cx.theme().danger))
@@ -1002,7 +1079,7 @@ impl SetupView {
             label,
             section.icon(),
             label,
-            self.section == section,
+            !self.showing_content && self.section == section,
             section.problem(&self.config).is_some(),
             cx,
         )
@@ -1031,7 +1108,7 @@ impl SetupView {
                 "Server",
                 SetupSection::Server.icon(),
                 "Server",
-                on_server_page && !open,
+                on_server_page && !open && !self.showing_content,
                 server_needs_answer && !open,
                 cx,
             )
@@ -1067,7 +1144,7 @@ impl SetupView {
                     self.sidebar_item(section, label, cx)
                 }))
         });
-        v_flex()
+        let sidebar = v_flex()
             .w(px(220.0))
             .flex_shrink_0()
             .h_full()
@@ -1077,7 +1154,11 @@ impl SetupView {
             .bg(cx.theme().sidebar)
             .text_color(cx.theme().sidebar_foreground)
             .border_r_1()
-            .border_color(cx.theme().sidebar_border)
+            .border_color(cx.theme().sidebar_border);
+        if self.dashboard.read(cx).added_server().is_some() {
+            return sidebar;
+        }
+        sidebar
             .child(group_label("Required"))
             .child(self.sidebar_item(
                 SetupSection::Authentication,
@@ -1097,6 +1178,29 @@ impl SetupView {
     // MARK: Detail
 
     fn detail(&self, cx: &mut Context<Self>) -> Div {
+        if self.showing_content {
+            // A managed machine's failure waits until that machine shows again.
+            let failure = self
+                .server
+                .read(cx)
+                .failure
+                .clone()
+                .filter(|_| self.dashboard.read(cx).added_server().is_none());
+            let server = self.server.clone();
+            return v_flex()
+                .flex_1()
+                .min_w_0()
+                .h_full()
+                .children(failure.map(|failure| {
+                    div().p_4().child(error_alert(
+                        &failure.title,
+                        &failure.message,
+                        move |_, _, cx| server.update(cx, |server, cx| server.dismiss_failure(cx)),
+                        cx,
+                    ))
+                }))
+                .child(v_flex().flex_1().min_h_0().child(self.dashboard.clone()));
+        }
         let server = self.server.read(cx);
         let activity = server.activity.clone();
         let failure = server.failure.clone();
@@ -1116,6 +1220,7 @@ impl SetupView {
             SetupSection::Logging => self.logging_pane(cx),
             SetupSection::AuditLog => self.audit_pane(cx),
             SetupSection::Telemetry => self.telemetry_pane(cx),
+            SetupSection::Proxy => self.proxy_pane(cx),
             SetupSection::DangerZone => self.danger_zone_pane(cx),
         };
 
@@ -1524,9 +1629,6 @@ impl SetupView {
                             this.config.server.port =
                                 AuthenticationSettings::MANAGED_PORT.to_owned();
                             this.sync_inputs(window, cx);
-                            if this.onboarding == Some(Step::SignIn) {
-                                this.onboarding = Some(Step::License);
-                            }
                             this.edited(cx);
                         }))
                         .into_any_element()
@@ -2472,6 +2574,81 @@ impl SetupView {
             .into_any_element()
     }
 
+    fn proxy_pane(&self, cx: &mut Context<Self>) -> AnyElement {
+        let mode = self.config.proxy.mode;
+        let system_hint = if self.server.read(cx).connection.is_remote() {
+            "ricochet uses the proxy that `HTTPS_PROXY` names on that machine, if any."
+        } else if cfg!(target_os = "macos") {
+            "ricochet uses the proxy set in System Settings under Network. A proxy configuration file (PAC) isn't read."
+        } else if cfg!(windows) {
+            "ricochet uses the proxy set in Windows Settings under Network & internet. A setup script (PAC) isn't read."
+        } else {
+            "ricochet uses the proxy that `HTTPS_PROXY` names for this app, if any."
+        };
+        let modes = segmented(
+            "proxy-mode",
+            ProxyMode::ALL
+                .iter()
+                .map(|choice| (choice.title(), *choice == mode))
+                .collect(),
+            {
+                let view = cx.entity();
+                move |index, _, app| {
+                    view.update(app, |this, cx| {
+                        this.config.proxy.mode = ProxyMode::ALL[index];
+                        this.edited(cx);
+                    });
+                }
+            },
+        );
+        let muted = cx.theme().muted_foreground;
+        v_flex()
+            .gap_4()
+            .max_w(px(760.0))
+            .child(
+                card(cx)
+                    .child(field(
+                        "Proxy",
+                        Some(
+                            match mode {
+                                ProxyMode::System => system_hint,
+                                ProxyMode::Manual => "ricochet and its downloads go through the proxy below.",
+                                ProxyMode::Off => "ricochet connects to the internet without a proxy.",
+                            }
+                            .to_owned(),
+                        ),
+                        modes,
+                        cx,
+                    ))
+                    .when(mode == ProxyMode::Manual, |pane| {
+                        pane.child(field(
+                            "Proxy address",
+                            Some("The proxy's URL with its port, like http://proxy.example.com:8080.".into()),
+                            self.input("proxy.url"),
+                            cx,
+                        ))
+                        .child(field(
+                            "Reach these hosts directly",
+                            Some("Separate hosts with commas. ricochet always reaches `localhost` directly.".into()),
+                            self.input("proxy.bypass"),
+                            cx,
+                        ))
+                    }),
+            )
+            .child(
+                h_flex()
+                    .gap_2()
+                    .p_3()
+                    .items_start()
+                    .bg(cx.theme().muted)
+                    .child(ph("info").size_4().text_color(muted))
+                    .child(div().flex_1().text_xs().text_color(muted).child(prose(
+                        "This proxy is for ricochet on this machine. The app reaches servers through its own proxy, under App settings in the server menu.",
+                    ))),
+            )
+            .into_any_element()
+    }
+
     fn telemetry_pane(&self, cx: &mut Context<Self>) -> AnyElement {
         let telemetry = &self.config.telemetry;
         card(cx)
@@ -2498,28 +2675,54 @@ impl SetupView {
 
 impl Render for SetupView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if let Some(step) = self.onboarding {
-            return self.onboarding_view(step, cx);
+        let added = self.dashboard.read(cx).added_server().is_some();
+        let shows_dashboard = self.onboarding.is_none()
+            && !(self.server.read(cx).loading && !added)
+            && self.instance_inputs.is_none()
+            && self.app_settings.is_none()
+            && self.showing_content;
+        if !shows_dashboard {
+            self.dashboard
+                .update(cx, |dashboard, cx| dashboard.hide_web(cx));
         }
-        if self.server.read(cx).loading {
-            return self.connecting_view(cx);
-        }
-        self.viewport_height = window.viewport_size().height;
-
+        let connecting = self.server.read(cx).loading && !added;
+        let controls = (self.onboarding.is_none() && !connecting).then(|| self.controls(cx));
+        let update_bar = controls.as_ref().and_then(|_| self.app_update_bar(cx));
+        let body = if let Some(step) = self.onboarding {
+            self.onboarding_view(step, cx)
+        } else if connecting {
+            self.connecting_view(cx)
+        } else {
+            self.workspace(window, cx)
+        };
         v_flex()
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .children(self.app_update_bar(cx))
-            .child(self.controls(cx))
-            .child(rule(cx))
-            .child(
-                h_flex()
-                    .flex_1()
-                    .min_h_0()
-                    .child(self.sidebar(cx))
-                    .child(self.detail(cx)),
-            )
+            .child(title_bar(controls, cx))
+            .children(update_bar)
+            .child(v_flex().flex_1().min_h_0().child(body))
+    }
+}
+
+impl SetupView {
+    /// The sidebar and pane, or the server's content, below the title bar.
+    fn workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        self.viewport_height = window.viewport_size().height;
+        v_flex()
+            .size_full()
+            .child(h_flex().flex_1().min_h_0().map(|body| {
+                if self.instance_inputs.is_some() {
+                    body.child(self.instances_page(cx))
+                } else if self.showing_content && self.app_settings.is_some() {
+                    // The system draws the web UI above the window, so it stays out while the App settings dialog shows.
+                    body
+                } else if self.showing_content {
+                    body.child(self.detail(cx))
+                } else {
+                    body.child(self.sidebar(cx)).child(self.detail(cx))
+                }
+            }))
             .capture_any_mouse_down({
                 let pressed = self.focus_at_press.clone();
                 move |_, window, cx| *pressed.borrow_mut() = window.focused(cx)
@@ -2533,6 +2736,23 @@ impl Render for SetupView {
                 }
             })
             .children(Root::render_dialog_layer(window, cx))
+            .into_any_element()
+    }
+}
+
+/// The window's title bar with the app's controls beside the window buttons, on macOS and Windows,
+/// where the window has no title bar of its own; on Linux the desktop draws one, so the controls go below it.
+fn title_bar(controls: Option<Div>, cx: &App) -> AnyElement {
+    let controls = controls.unwrap_or_else(div);
+    if cfg!(any(target_os = "macos", target_os = "windows")) {
+        TitleBar::new().pr_2().child(controls).into_any_element()
+    } else {
+        h_flex()
+            .h(px(40.0))
+            .px_3()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .child(controls)
             .into_any_element()
     }
 }
