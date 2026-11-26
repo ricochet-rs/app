@@ -154,6 +154,25 @@ pub trait Backend: Send + Sync {
         Ok(())
     }
 
+    /// Moves each internal port another app took since ricochet last ran, which only this computer does.
+    fn move_taken_ports(&self) -> Result<()> {
+        Ok(())
+    }
+
+    /// Starts ricochet, first moving taken ports while it is stopped, because it holds its own ports while it runs.
+    fn start_server(&self) -> Result<()> {
+        if !self.service().is_loaded() {
+            self.move_taken_ports()?;
+        }
+        self.service().start()
+    }
+
+    /// Stops ricochet and starts it again through `start_server`, so a port another app took moves too.
+    fn restart_server(&self) -> Result<()> {
+        self.service().stop()?;
+        self.start_server()
+    }
+
     /// Runs `ricochet-server user --config <file> ...` and returns what it prints.
     fn users(&self, arguments: &[&str]) -> Result<String> {
         let paths = self.paths();

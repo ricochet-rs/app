@@ -36,8 +36,10 @@ Compile the systemd code on every platform, because the SSH backend drives a Lin
 Run `ricochet-server start` in the foreground under the launch agent or systemd unit, never with `--daemon`, because neither can supervise a process that forks away from it.
 Write an absolute `home` and pass `--config`, because launchd starts the job in `/` and ricochet's `home` defaults to the working directory.
 Turn on `logs.file_logging`, because launchd appends stdout to its file forever and never rotates it.
-Probe the proxy port only when the person changed it, before stopping the server, and with `SO_REUSEADDR`, because ricochet's own just-closed connections make its port look taken right after it stops.
-Keep the ports already saved in `[network]` instead of probing again, so a save never moves ricochet's internal ports.
+Probe the proxy port only when the person changed it, before stopping the server, and with `SO_REUSEADDR` except on Windows, because ricochet's own just-closed connections make its port look taken right after it stops, and Windows lets `SO_REUSEADDR` bind over another app's listener.
+Pick ricochet's internal ports at random from the dynamic range 49152 to 65535, never 3000 and 3001, because other development servers hold those.
+Keep the ports already saved in `[network]` when saving, because ricochet holds them while it runs, and move a taken one only on this computer, in `LocalBackend::move_taken_ports` while ricochet is stopped.
+Stop ricochet on this computer when the app quits, start it again at launch, and leave it running when the app quits to relaunch its update.
 Give the SSH tunnel its own connection with `ControlPath=none`, because a shared control master takes over the forward, lets `ssh` exit, and keeps the port after the app quits.
 Start the server on Windows through a `Run` entry under `HKCU` and `ricochet-launcher.exe`, because that needs no admin rights, and the launcher hides the console window and restarts the server after a crash.
 Spawn every process through `command::new`, because Windows flashes a console window for each console program the app runs.

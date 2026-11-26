@@ -77,6 +77,8 @@ pub struct ServerController {
     pub loading: bool,
     /// Whether `installed` and `status` still await their first full read on this computer.
     pub checking: bool,
+    /// Whether quitting leaves ricochet on this computer running, as when the app quits to relaunch its update.
+    pub keep_running_on_quit: bool,
 }
 
 impl ServerController {
@@ -106,10 +108,27 @@ impl ServerController {
             generation: 0,
             loading: reconnect,
             checking: true,
+            keep_running_on_quit: false,
         };
         cx.spawn(async move |this, cx| Self::watch(this, cx).await)
             .detach();
+        cx.on_app_quit(|this, _| {
+            if !this.keep_running_on_quit {
+                Self::stop_local_server();
+            }
+            async {}
+        })
+        .detach();
         this
+    }
+
+    /// Stops ricochet on this computer, whichever computer the app shows.
+    /// It runs before the quit handler returns, because GPUI waits only 200 ms for the handler's future.
+    fn stop_local_server() {
+        let local = LocalBackend::new();
+        if local.service().is_loaded() {
+            let _ = local.service().stop();
+        }
     }
 
     pub fn backend(&self) -> Arc<dyn Backend> {
@@ -221,7 +240,7 @@ impl ServerController {
                     let _ = backend.keep_running_after_logout();
                 }
                 progress.activity("Starting ricochet");
-                backend.service().start()?;
+                backend.start_server()?;
                 backend.wait_until_running(port)?;
                 Ok(Update {
                     configured: Some(true),
@@ -241,7 +260,7 @@ impl ServerController {
             "Ricochet didn't start",
             cx,
             move |backend, _| {
-                backend.service().start()?;
+                backend.start_server()?;
                 backend.wait_until_running(port)?;
                 Ok(Update::default())
             },
@@ -267,7 +286,7 @@ impl ServerController {
             "Ricochet didn't restart",
             cx,
             move |backend, _| {
-                backend.service().restart()?;
+                backend.restart_server()?;
                 backend.wait_until_running(port)?;
                 Ok(Update::default())
             },
@@ -335,7 +354,7 @@ impl ServerController {
                 let paths: Vec<_> = data.iter().flat_map(|item| item.paths(&home)).collect();
                 backend.remove_data(&paths)?;
                 if was_running {
-                    backend.service().start()?;
+                    backend.start_server()?;
                     backend.wait_until_running(port)?;
                 }
                 Ok(Update::default())
@@ -470,7 +489,7 @@ impl ServerController {
             } else {
                 this.refresh(true, cx);
                 if this.is_configured {
-                    this.restart_if_job_changed(cx);
+                    this.start_on_launch(cx);
                 }
             }
         });
@@ -505,12 +524,13 @@ impl ServerController {
         }
     }
 
-    /// Rewrites the service job on launch and restarts ricochet only when the job changed.
-    fn restart_if_job_changed(&mut self, cx: &mut Context<Self>) {
+    /// Rewrites the service job on launch and starts ricochet, which quitting the app stopped,
+    /// restarting it instead when it already runs under a job that changed.
+    fn start_on_launch(&mut self, cx: &mut Context<Self>) {
         let port = self.proxy_port.unwrap_or(DEFAULT_PORT);
         self.perform(
-            "Restarting ricochet",
-            "Ricochet didn't restart",
+            "Starting ricochet",
+            "Ricochet didn't start",
             cx,
             move |backend, _| {
                 let _ = backend.prepare();
@@ -519,11 +539,18 @@ impl ServerController {
                     .map(|config| backend.proxy_environment(&config.proxy))
                     .unwrap_or_default();
                 backend.use_proxy(&environment);
-                if backend.service().write_job(&environment)? && backend.service().is_loaded() {
-                    backend.service().stop()?;
-                    backend.service().start()?;
-                    backend.wait_until_running(port)?;
+                let changed = backend.service().write_job(&environment)?;
+                if backend.installed().is_none() {
+                    return Ok(Update::default());
                 }
+                if backend.service().is_loaded() {
+                    if !changed {
+                        return Ok(Update::default());
+                    }
+                    backend.service().stop()?;
+                }
+                backend.start_server()?;
+                backend.wait_until_running(port)?;
                 Ok(Update::default())
             },
         );
