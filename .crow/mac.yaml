@@ -1,6 +1,6 @@
 # Builds ricochet.app for Apple Silicon and packages it as a .dmg, and on a pushed tag attaches the .dmg to the release from release.yaml.
 # A manual run, or a push that changes how the .dmg is made, builds the .dmg and attaches nothing, which tests this workflow without a release.
-# The Apple Silicon agent runs the `local` backend, so `image` names the shell and there are no containers.
+# The agent rhea-tart runs Crow's `tart` backend: each run gets its own throwaway macOS VM, and `image` names the shell in it.
 # This workflow polls for the release instead of depending on `release`, because Crow drops a workflow whose dependency does not run, and only a tag runs `release`.
 clone:
   git:
@@ -11,13 +11,13 @@ clone:
 when:
   - event: tag
   - event: manual
-  # A push and never a pull request, because a pull request can come from a fork, and this agent runs steps on the host.
+  # A push and never a pull request, because a pull request can come from a fork, and its code would run on our Mac's network with the release token in reach.
   - event: push
     path:
       include: ['.crow/mac.yaml', 'justfile', 'Support/**']
 
 labels:
-  agent: macmini-pat
+  agent: rhea-tart
   platform: darwin/arm64
 
 steps:
@@ -26,11 +26,11 @@ steps:
     commands:
       - |
         set -euo pipefail
-        # The agent starts steps with a short PATH, so add where Homebrew and rustup put their tools.
-        export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:$PATH"
-        command -v cargo > /dev/null || { echo "ERROR: cargo is missing on this agent; install Rust with rustup"; exit 1; }
-        # Each step runs sandboxed, so cargo keeps its downloads in the workspace.
-        export CARGO_HOME="$PWD/.cargo-home"
+        # The VM image ships git, Homebrew and the Command Line Tools but no Rust, so install rustup and just, which take seconds.
+        # rustup installs no toolchain here, because rust-toolchain.toml names the one cargo fetches.
+        export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:$PATH" HOMEBREW_NO_AUTO_UPDATE=1
+        curl -fsSL https://sh.rustup.rs | sh -s -- -y --quiet --profile minimal --default-toolchain none
+        brew install --quiet just
         VERSION="${CI_COMMIT_TAG#v}"
         # Only a tag carries a version, so every other run builds the justfile's default.
         just dmg "$${VERSION:-0.0.0}"
@@ -61,7 +61,7 @@ steps:
           sleep 15
         done
         [ -n "$FOUND" ] || { echo "ERROR: no release for ${CI_COMMIT_TAG} appeared within 15 minutes"; exit 1; }
-        # The agent has no gh, so this uploads through the GitHub API, reading its JSON with macOS's own plutil.
+        # The VM has no gh, so this uploads through the GitHub API, reading its JSON with macOS's own plutil.
         RELEASE_ID=$(plutil -extract id raw -o - release.json)
         # Replace the asset a previous run of this tag uploaded, so a restarted run succeeds.
         COUNT=$(plutil -extract assets raw -o - release.json)

@@ -119,21 +119,18 @@ Ricochet installs whichever tarball the app copies, but reinstalls renv only whe
 
 ## CI
 
-Run git-sv, commitlint, tests and the Linux and Windows builds on the Linux agent, and only the `.dmg` on the Apple Silicon agent, because that agent runs the `local` backend, where `image` names the shell and containers do not exist.
-Pin `mac.yaml` to `agent: macmini-pat`, because Crow ran it on `thumper` with only `platform: darwin/arm64`.
-Write the `.dmg` with `bsdtar` and `hdiutil convert`, never with `hdiutil create`, `hdiutil makehybrid` or `diskutil image create from` a folder, because each of those needs IOKit or a raw disk, and that agent's sandbox denies both.
-Keep `rockridge=strict` in the `dmg` recipe, because bsdtar's default clears write permission, and an app copied out of such an image cannot be deleted.
-Keep scripts out of `ricochet.app/Contents/MacOS`, because `codesign` stores a script's signature in extended attributes and the `.dmg`'s ISO 9660 volume keeps none.
-Mount a `.dmg` on a Mac outside Crow after changing how it is made, because the sandbox can't mount one and `just dmg` only reads the app back out of the image.
+Run git-sv, commitlint, tests and the Linux and Windows builds on the Linux agent, and only the `.dmg` on `rhea-tart`, whose `tart` backend runs each workflow in a throwaway macOS VM, where `image` names the shell and containers do not exist.
+Pin `mac.yaml` to `agent: rhea-tart`, never `macmini-pat`, because that agent's `local` backend sandboxes every step and denies `hdiutil create` the IOKit access it needs.
+Install every tool `mac.yaml` needs beyond git, Homebrew and the Command Line Tools in its build step, as it does rustup and `just`, because each run starts from the clean VM image pinned in `host_vars/rhea.yaml` of `ansible/internal`.
 Keep `mac.yaml` free of `depends_on`, and let it poll for the release, because Crow drops a workflow whose dependency does not run, and then no run without a tag could build the `.dmg`.
-Never run `mac.yaml` for a `pull_request` event, because a pull request can come from a fork, and the Apple Silicon agent runs steps as root on the host, not in a container.
+Never run `mac.yaml` for a `pull_request` event, because a pull request can come from a fork, and its code would run with the release token in reach.
 Build the AppImage on Debian bookworm, the oldest Debian that still gets security updates, because the glibc it links against sets the oldest distribution it runs on.
 Start a script in a Debian container with `set -eu`, never `-o pipefail`, because Crow runs it with dash.
 Cross-compile Windows with cargo-xwin and the `windows` Cargo profile, because no Windows agent exists and GPUI precompiles its Windows shaders only when it builds on Windows; that profile keeps the debug assertions of `gpui-pre-windows` on, which makes it compile them at run time.
 Run `just lint-windows` beside `just lint`, in `test.yaml` too, because the Linux and macOS lints never compile the Windows-only code.
 Keep `linux.yaml` and `windows.yaml` depending on `release`, because `gh release upload` needs the release `release.yaml` creates.
 Write Crow metadata in brace form (`${CI_COMMIT_TAG}`) and shell-local variables bare or with `$$`, because Crow expands `${...}` before the shell runs, as ricochet's root `CLAUDE.md` explains.
-Make every release step safe to restart: edit the release when it exists, and replace an artifact a previous run uploaded, with `gh release upload --clobber` on the Linux agent and through the GitHub API on the Apple Silicon agent, which has no `gh`.
+Make every release step safe to restart: edit the release when it exists, and replace an artifact a previous run uploaded, with `gh release upload --clobber` on the Linux agent and through the GitHub API in the macOS VM, which has no `gh`.
 `.gitsv/config.yaml` and `.commitlintrc.json` are copies of ricochet's; change them in both repositories together.
 
 ## Style
