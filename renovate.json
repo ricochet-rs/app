@@ -9,6 +9,12 @@
       "allowedVersions": "<0.2.190"
     },
     {
+      "description": "wry pins webkit2gtk 2.0.1, which links gtk 0.18, and only one gtk-sys may link gtk-3.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["gtk"],
+      "allowedVersions": "<0.19"
+    },
+    {
       "description": "No test renders the UI, so a person reviews every GPUI release before it merges.",
       "groupName": "gpui",
       "matchManagers": ["cargo"],

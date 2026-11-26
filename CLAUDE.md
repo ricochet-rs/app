@@ -156,4 +156,5 @@ Drop the `mac.yml` exclude from the `yaml-file-extension` hook when that file go
 
 Keep the `rust-toolchain` manager disabled in `renovate.json`, because the toolchain follows ricochet's pin by hand.
 Keep `allowedVersions` for `libc` equal to the upper bound in `Cargo.toml`, because Renovate widens a version range it is not told to respect.
+Hold `gtk` at the version wry's `webkit2gtk` links against, through `allowedVersions` in `renovate.json`, because only one `gtk-sys` may link `gtk-3`.
 Leave automerge off for the GPUI crates, because no test renders the UI.

@@ -37,7 +37,7 @@ wry = { package = "lb-wry", version = "0.53.3", default-features = false, featur
 
 # WebKitGTK draws the web UI on Linux; wry embeds it only in an X11 window, so the app runs on X11 there.
 [target.'cfg(target_os = "linux")'.dependencies]
-gtk = "0.19"
+gtk = "0.18"
 raw-window-handle = "0.6"
 
 # GPUI precompiles its Windows shaders with fxc.exe only when it builds on Windows, so the cross-compiled
