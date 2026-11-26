@@ -8,7 +8,8 @@ use crate::ui::icons::ph;
 use gpui::prelude::*;
 use gpui::{Context, Entity, Subscription, Window, div, px};
 use gpui_component::WindowExt as _;
-use gpui_component::dialog::DialogButtonProps;
+use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::dialog::{DialogAction, DialogFooter};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::{ActiveTheme, h_flex, v_flex};
 
@@ -59,8 +60,11 @@ impl SetupView {
                 .title(prose("App settings"))
                 .w(px(560.0))
                 .child(proxy_settings(&view, &url, &bypass, cx))
-                .footer(|ok, _, window, cx| vec![ok(window, cx)])
-                .button_props(DialogButtonProps::default().ok_text("Done"))
+                .footer(
+                    DialogFooter::new().child(
+                        DialogAction::new().child(Button::new("done").primary().label("Done")),
+                    ),
+                )
                 .on_ok(|_, _, _| true)
                 .on_close(move |_, _, cx| {
                     if let Some(view) = closed.upgrade() {

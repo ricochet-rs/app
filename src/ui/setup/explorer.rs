@@ -282,7 +282,7 @@ impl SetupView {
                                     .max_h(px(300.0))
                                     .overflow_y_scroll()
                                     .track_scroll(&self.explorer_scroll)
-                                    .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+                                    .on_scroll(|_, _, cx| cx.stop_propagation())
                                     .children(rows),
                             )
                             .vertical_scrollbar(&self.explorer_scroll),
@@ -421,7 +421,7 @@ impl SetupView {
         };
         let title = format!("Delete the {list}?");
         let view = cx.entity();
-        window.open_dialog(cx, move |dialog, _, _| {
+        window.open_alert_dialog(cx, move |dialog, _, _| {
             let view = view.clone();
             let chosen = chosen.clone();
             dialog

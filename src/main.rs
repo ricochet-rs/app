@@ -22,8 +22,8 @@ mod updater;
 
 use controller::ServerController;
 use gpui::{
-    App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, OsAction, WindowBounds,
-    WindowOptions, actions, px, size,
+    App, AppContext, Bounds, KeyBinding, Menu, MenuItem, OsAction, WindowBounds, WindowOptions,
+    actions, px, size,
 };
 use gpui_component::{Root, input};
 use ui::setup::SetupView;
@@ -35,7 +35,7 @@ fn main() {
     #[cfg(target_os = "linux")]
     ui::dashboard::linux_webview::prepare();
     updater::clean_up();
-    Application::new()
+    gpui_platform::application()
         .with_assets(assets::Assets)
         .run(|cx: &mut App| {
             gpui_component::init(cx);
@@ -52,26 +52,20 @@ fn main() {
                 KeyBinding::new(settings, ToggleSettings, None),
             ]);
             cx.set_menus(vec![
-                Menu {
-                    name: "ricochet".into(),
-                    items: vec![
-                        MenuItem::action("Settings…", ToggleSettings),
-                        MenuItem::separator(),
-                        MenuItem::action("Quit ricochet", Quit),
-                    ],
-                },
+                Menu::new("ricochet").items([
+                    MenuItem::action("Settings…", ToggleSettings),
+                    MenuItem::separator(),
+                    MenuItem::action("Quit ricochet", Quit),
+                ]),
                 // The webview on macOS gets ⌘X, ⌘C, ⌘V and ⌘A only through these items.
                 // They send cut:, copy:, paste: and selectAll: to the webview, or their action to a text field in the app,
                 // and take their shortcuts from gpui-component's text-field bindings.
-                Menu {
-                    name: "Edit".into(),
-                    items: vec![
-                        MenuItem::os_action("Cut", input::Cut, OsAction::Cut),
-                        MenuItem::os_action("Copy", input::Copy, OsAction::Copy),
-                        MenuItem::os_action("Paste", input::Paste, OsAction::Paste),
-                        MenuItem::os_action("Select All", input::SelectAll, OsAction::SelectAll),
-                    ],
-                },
+                Menu::new("Edit").items([
+                    MenuItem::os_action("Cut", input::Cut, OsAction::Cut),
+                    MenuItem::os_action("Copy", input::Copy, OsAction::Copy),
+                    MenuItem::os_action("Paste", input::Paste, OsAction::Paste),
+                    MenuItem::os_action("Select All", input::SelectAll, OsAction::SelectAll),
+                ]),
             ]);
 
             let bounds = Bounds::centered(None, size(px(1120.0), px(780.0)), cx);

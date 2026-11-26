@@ -390,7 +390,7 @@ impl SetupView {
                     .bg(cx.theme().muted)
                     .text_xs()
                     .font_family(mono)
-                    .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+                    .on_scroll(|_, _, cx| cx.stop_propagation())
                     .child(
                         list(self.log_list.clone(), move |index, _, cx| {
                             log_row(&shown[index], index, cx)
