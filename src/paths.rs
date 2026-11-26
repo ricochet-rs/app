@@ -3,6 +3,8 @@ use std::path::PathBuf;
 /// Where the app installs ricochet-server and where the server keeps its data.
 #[derive(Clone, Debug)]
 pub struct Paths {
+    /// Read by the launchd job and the systemd unit, which Windows has neither of.
+    #[cfg_attr(windows, allow(dead_code))]
     pub user_home: PathBuf,
     pub binary: PathBuf,
     pub home: PathBuf,
@@ -12,6 +14,7 @@ pub struct Paths {
     pub stderr: PathBuf,
     pub renv: PathBuf,
     /// `HOME` for ricochet-server and its content, inside the one folder the sandbox lets them write.
+    #[cfg_attr(windows, allow(dead_code))]
     pub sandbox_home: PathBuf,
     /// The app's own files, outside every folder the sandbox lets content read.
     pub app_support: PathBuf,
@@ -60,7 +63,8 @@ impl Paths {
         Self::with_app_support(user_home, app_support)
     }
 
-    /// The paths on a Linux computer reached over SSH, where this app keeps nothing of its own.
+    /// The paths on a Linux computer whose home folder is `user_home`.
+    #[cfg(all(test, target_os = "linux"))]
     pub fn linux(user_home: PathBuf) -> Self {
         let app_support = user_home.join(".local/share/ricochet-app");
         Self::with_app_support(user_home, app_support)

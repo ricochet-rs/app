@@ -64,7 +64,8 @@ impl Proxy {
         .to_vec()
     }
 
-    /// The proxy named by `HTTPS_PROXY`, `HTTP_PROXY` or their lowercase forms in `variables`.
+    /// The proxy named by `HTTPS_PROXY`, `HTTP_PROXY` or their lowercase forms in `variables`, read on Linux.
+    #[cfg(not(any(target_os = "macos", windows)))]
     pub fn from_environment<'a>(
         variables: impl IntoIterator<Item = (&'a str, &'a str)>,
     ) -> Option<Self> {
@@ -210,6 +211,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(any(target_os = "macos", windows)))]
     fn proxies_are_read_from_variables() {
         let found = Proxy::from_environment([
             ("PATH", "/bin"),

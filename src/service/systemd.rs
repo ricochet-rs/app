@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// A systemd user unit, which systemd starts at login and restarts when it fails.
-/// It works through a `Shell`, so it manages this computer or one reached over SSH.
 pub struct UserUnit {
     paths: Arc<Paths>,
     shell: Arc<dyn Shell>,
@@ -167,7 +166,6 @@ mod tests {
                 .push(format!("{program} {}", arguments.join(" ")));
             Ok(CommandResult {
                 success: true,
-                code: Some(0),
                 stdout: String::new(),
                 stderr: String::new(),
             })

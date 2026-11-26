@@ -84,15 +84,13 @@ impl SetupSection {
         }
     }
 
-    /// What the pane is for, given the SSH host ricochet runs on, or `None` for this machine.
-    pub fn summary(self, remote_host: Option<&str>) -> Option<String> {
+    /// What the pane is for.
+    pub fn summary(self) -> Option<String> {
         if self == Self::Server {
-            return Some(match remote_host {
-                Some(host) => format!("Ricochet runs on {host} as a systemd service."),
-                None if cfg!(any(target_os = "macos", windows)) => {
-                    "Ricochet runs on this machine whenever you're logged in.".to_owned()
-                }
-                None => "Ricochet runs on this machine as a systemd service.".to_owned(),
+            return Some(if cfg!(any(target_os = "macos", windows)) {
+                "Ricochet runs on this machine whenever you're logged in.".to_owned()
+            } else {
+                "Ricochet runs on this machine as a systemd service.".to_owned()
             });
         }
         self.fixed_summary().map(str::to_owned)

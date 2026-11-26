@@ -1,11 +1,10 @@
 //! The content of a ricochet server: its own web UI, shown inside the app.
 
-use super::components::{card, error_alert, heading, prose, rule};
+use super::components::{card, heading, prose, rule};
 use super::icons::ph;
 
 mod web;
-use crate::connections::Connection;
-use crate::controller::{DEFAULT_PORT, ServerController, ServerStatus};
+use crate::controller::{ServerController, ServerStatus};
 use crate::servers::{Instance, Placement, Server, Servers, normalize_url};
 use gpui::prelude::*;
 use gpui::{AnyElement, App, Context, Div, Entity, Subscription, Window, div, px};
@@ -38,7 +37,6 @@ enum Content {
     /// The managed server is installed but not running.
     NotRunning,
     Loading,
-    Failed(String),
     /// The server's web UI, at this address.
     Web(String),
 }
@@ -47,8 +45,6 @@ pub struct DashboardView {
     server: Entity<ServerController>,
     store: Servers,
     content: Content,
-    /// Counts loads, so an answer about a server you already left is dropped.
-    load_generation: u64,
     url_input: Entity<InputState>,
     adding_server: bool,
     add_problem: Option<String>,
@@ -92,7 +88,6 @@ impl DashboardView {
             server,
             store: Servers::load(),
             content: Content::NoServer,
-            load_generation: 0,
             url_input,
             adding_server: false,
             add_problem: None,
@@ -112,7 +107,7 @@ impl DashboardView {
         let controller = self.server.read(cx);
         controller
             .is_configured
-            .then(|| Server::managed(&controller.connection, controller.dashboard()))
+            .then(|| Server::managed(controller.dashboard()))
     }
 
     fn managed_state(&self, cx: &App) -> (Option<Server>, ServerStatus, bool) {
@@ -169,11 +164,9 @@ impl DashboardView {
         self.load(cx);
     }
 
-    /// Every instance, in the order and groups you gave them, given the machines you connected to.
-    pub fn instances(&self, machines: Vec<Connection>) -> Vec<(Instance, Placement)> {
-        let instances = machines
-            .into_iter()
-            .map(Instance::Machine)
+    /// Every instance, in the order and groups you gave them.
+    pub fn instances(&self) -> Vec<(Instance, Placement)> {
+        let instances = std::iter::once(Instance::Local)
             .chain(self.added_servers().into_iter().map(Instance::Added))
             .collect();
         self.store.arrange(instances)
@@ -238,13 +231,6 @@ impl DashboardView {
         cx.notify();
     }
 
-    /// Forgets the name, group and place of a machine you removed.
-    pub fn forget_placement(&mut self, id: &str, cx: &mut Context<Self>) {
-        self.store.forget_placement(id);
-        self.store.save();
-        cx.notify();
-    }
-
     /// Shows the content of the server this app manages.
     pub fn show_managed(&mut self, cx: &mut Context<Self>) {
         self.store.active = None;
@@ -284,7 +270,6 @@ impl DashboardView {
     // MARK: Loading
 
     fn load(&mut self, cx: &mut Context<Self>) {
-        self.load_generation += 1;
         let Some(server) = self.active_server(cx) else {
             self.content = Content::NoServer;
             cx.notify();
@@ -304,38 +289,8 @@ impl DashboardView {
                 return;
             }
         }
-        self.show_web(server, cx);
-    }
-
-    /// Opens the tunnel to a managed server if it needs one, then shows the server's web UI.
-    fn show_web(&mut self, server: Server, cx: &mut Context<Self>) {
-        self.content = Content::Loading;
+        self.content = Content::Web(server.url);
         cx.notify();
-        let generation = self.load_generation;
-        let backend = server.managed.then(|| self.server.read(cx).backend());
-        let port = self.server.read(cx).proxy_port.unwrap_or(DEFAULT_PORT);
-        let reached = cx.background_executor().spawn(async move {
-            match backend {
-                Some(backend) => backend
-                    .reach_dashboard(port)
-                    .map_err(|error| error.to_string()),
-                None => Ok(()),
-            }
-        });
-        cx.spawn(async move |this, cx| {
-            let result = reached.await;
-            let _ = this.update(cx, |this, cx| {
-                if this.load_generation != generation {
-                    return;
-                }
-                this.content = match result {
-                    Ok(()) => Content::Web(server.url),
-                    Err(message) => Content::Failed(message),
-                };
-                cx.notify();
-            });
-        })
-        .detach();
     }
 
     // MARK: Forms
@@ -457,15 +412,6 @@ impl DashboardView {
             Content::Loading => self
                 .centered(h_flex().justify_center().child(Spinner::new()), cx)
                 .into_any_element(),
-            Content::Failed(message) => {
-                let alert = error_alert(
-                    "Couldn't reach ricochet",
-                    message,
-                    cx.listener(|this, _, _, cx| this.load(cx)),
-                    cx,
-                );
-                self.centered(alert, cx).into_any_element()
-            }
         }
     }
 }

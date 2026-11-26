@@ -24,7 +24,7 @@ The ricochet native app will get you up and running with the Community Edition i
 ## Get started
 
 1. Download the latest release for your platform.
-2. Open the app and choose where to install ricochet: this machine or one of your SSH hosts.
+2. Open the app and select **Get started** to install ricochet on this machine.
 3. Choose how people sign in, add a license if you have one, and select **Install and start**.
 
 That's it. ricochet runs in the background, and you can come back to the app any time to change settings, read the logs, or update.
@@ -35,12 +35,10 @@ That's it. ricochet runs in the background, and you can come back to the app any
 | Windows (x86_64)      | `ricochet-<version>-windows-x86_64.zip` |
 | Linux (x86_64)        | `ricochet-<version>-x86_64.AppImage`    |
 
-## Install on a remote host
+## Use ricochet on a server
 
-The ricochet native app can use your existing SSH connections to install ricochet on any of your machines.
-Every host from your SSH config shows up in the app, and you can add one with `user@host`.
-
-Each SSH host is expected to be a Linux machine you can reach with key-based SSH access.
+The app installs ricochet on this machine only.
+To run ricochet on a server, install it there by following the [installation guide](https://docs.ricochet.rs/latest/admin/installation/1-host/), then select **Connect to a server** in the app and enter its address.
 
 ## See your content
 
@@ -52,17 +50,17 @@ On Linux the app needs GTK 3 and WebKitGTK 4.1 from your distribution, such as `
 It runs on X11, through XWayland on a Wayland desktop.
 
 Switch instances from the menu in the title bar.
-It lists this machine, the SSH hosts you connected to, and any other ricochet server you connected to by its address.
-**Connect another instance** connects to a running ricochet by its address, or installs ricochet on a machine instead, and **Manage instances** lets you rename, group and reorder the list.
+It lists this machine and any other ricochet server you connected to by its address.
+**Connect another instance** connects to a running ricochet by its address, or installs ricochet on this machine instead, and **Manage instances** lets you rename, group and reorder the list.
 A server you connected to by address shows only its web UI, since the app doesn't manage it.
-For a machine the app manages, press ⌘, on macOS or Ctrl+, on Windows and Linux, choose **Settings…** in the app menu, or select the settings button in the title bar to change its configuration, and select **Done** to return to its web UI.
+For ricochet on this machine, press ⌘, on macOS or Ctrl+, on Windows and Linux, choose **Settings…** in the app menu, or select the settings button in the title bar to change its configuration, and select **Done** to return to its web UI.
 
 ## Behind a proxy
 
-Each machine's **Network proxy** page, under **Server** in its settings, sets the HTTP proxy ricochet uses there to install packages and deploy from Git.
-By default it uses the machine's own settings: System Settings on macOS, Windows Settings on Windows, and `HTTPS_PROXY` on Linux and SSH hosts.
+The **Network proxy** page, under **Server** in this machine's settings, sets the HTTP proxy ricochet uses there to install packages and deploy from Git.
+By default it uses the machine's own settings: System Settings on macOS, Windows Settings on Windows, and `HTTPS_PROXY` on Linux.
 Choose **Use this proxy** to enter one yourself, with the hosts that should bypass it.
-The app itself has a **Network proxy** setting on its **App settings** page, which ⌘, or Ctrl+, opens for a server you added by address, and **App settings** opens from the sidebar of a machine's settings.
+The app itself has a **Network proxy** setting on its **App settings** page, which ⌘, or Ctrl+, opens for a server you added by address, and **App settings** opens from the sidebar of this machine's settings.
 By default the app follows your operating system's proxy settings.
 Enter a proxy there when the app needs one to reach a ricochet server or to download ricochet.
 

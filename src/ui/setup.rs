@@ -12,7 +12,6 @@ use crate::config::{
     AuthenticationSettings, Encryption, LogLevel, LogRotation, PackageIndex, Provider, ProxyMode,
     RRepository, Role, ServerConfig,
 };
-use crate::connections::Connection;
 use crate::controller::{Failure, ServerController, ServerStatus};
 use crate::person::Person;
 use crate::servers::Server;
@@ -108,16 +107,10 @@ pub struct SetupView {
     /// The fields of the App settings dialog while it is open.
     app_settings: Option<app_settings::AppSettingsInputs>,
     instance_subscriptions: Vec<Subscription>,
-    /// The count of config reads from the computer being managed that the fields already show.
+    /// The count of config reads from this computer that the fields already show.
     seen_generation: u64,
-    /// Whether to keep a remote ricochet running after you log out of that computer.
-    keep_running: bool,
     page_scroll: ScrollHandle,
-    machine_scroll: ScrollHandle,
     explorer_scroll: ScrollHandle,
-    host_input: Entity<InputState>,
-    /// The machine picked on the install location step, or `None` for the one managed now.
-    target_choice: Option<Connection>,
     /// The first-run screen being shown, or `None` once setup is behind you.
     onboarding: Option<Step>,
     section: SetupSection,
@@ -176,8 +169,6 @@ impl SetupView {
         let saved_issuer = saved.as_ref().map(|config| config.authentication.issuer());
         let first_run = !server.read(cx).is_configured;
         let log_following = std::rc::Rc::new(std::cell::Cell::new(true));
-        let host_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("my-server or user@host"));
         let dashboard = cx.new(|cx| DashboardView::new(server.clone(), window, cx));
         let showing_added = dashboard.read(cx).added_server().is_some();
         let mut view = Self {
@@ -187,12 +178,8 @@ impl SetupView {
             app_settings: None,
             instance_subscriptions: Vec::new(),
             seen_generation: 0,
-            keep_running: true,
             page_scroll: ScrollHandle::default(),
-            machine_scroll: ScrollHandle::default(),
             explorer_scroll: ScrollHandle::default(),
-            host_input,
-            target_choice: None,
             section: SetupSection::Authentication,
             users_tab: UsersTab::Settings,
             logging_tab: LoggingTab::Settings,
@@ -692,19 +679,11 @@ impl SetupView {
         cx.notify();
     }
 
-    /// Shows a machine this app manages, connecting to it first when it is not the current one.
-    fn show_machine(&mut self, target: Connection, cx: &mut Context<Self>) {
-        let server = self.server.read(cx);
-        if target != server.connection && server.activity.is_some() {
-            return;
-        }
+    /// Shows ricochet on this computer, or the first-run setup while it isn't set up.
+    fn show_local(&mut self, cx: &mut Context<Self>) {
         self.dashboard
             .update(cx, |dashboard, cx| dashboard.show_managed(cx));
-        let server = self.server.read(cx);
-        if target != server.connection {
-            self.server
-                .update(cx, |server, cx| server.switch(target, cx));
-        } else if !server.is_configured {
+        if !self.server.read(cx).is_configured {
             self.onboarding = Some(Step::Welcome);
         }
         cx.notify();
@@ -744,7 +723,6 @@ impl SetupView {
         }
         self.problem = None;
         self.considering_managed = false;
-        self.target_choice = None;
         self.rebuild_rows(window, cx);
         self.sync_inputs(window, cx);
         self.onboarding = match (configured, self.onboarding) {
@@ -837,9 +815,8 @@ impl SetupView {
         }
         self.submitted = true;
         let config = self.config.clone();
-        let keep_running = self.keep_running && self.server.read(cx).connection.is_remote();
         self.server
-            .update(cx, |server, cx| server.set_up(config, keep_running, cx));
+            .update(cx, |server, cx| server.set_up(config, cx));
     }
 
     fn save_title(&self, cx: &App) -> &'static str {
@@ -1204,10 +1181,6 @@ impl SetupView {
         let activity = server.activity.clone();
         let failure = server.failure.clone();
         let busy = activity.is_some();
-        let remote_host = server
-            .connection
-            .is_remote()
-            .then(|| server.connection.name());
         let pane = match self.section {
             SetupSection::Authentication => self.authentication_pane(cx),
             SetupSection::Server => self.server_pane(cx),
@@ -1261,7 +1234,7 @@ impl SetupView {
                             .p_6()
                             .child(heading(
                                 self.section.title(),
-                                self.section.summary(remote_host.as_deref()).as_deref(),
+                                self.section.summary().as_deref(),
                                 cx,
                             ))
                             .child(pane),
@@ -1932,7 +1905,6 @@ impl SetupView {
     fn danger_zone_pane(&self, cx: &mut Context<Self>) -> AnyElement {
         let installed = self.server.read(cx).installed.is_some();
         let controller = self.server.read(cx);
-        let remote = controller.connection.is_remote();
         let home = controller.backend().paths().home.clone();
         let danger = cx.theme().danger;
         let edge = danger.opacity(0.35);
@@ -1964,7 +1936,8 @@ impl SetupView {
                 .child(h_flex().flex_shrink_0().gap_2().children(actions))
         };
         let home_text = home.display().to_string();
-        let mut home_actions = vec![
+        let folder = home.clone();
+        let home_actions = vec![
             Button::new("copy-home")
                 .icon(ph("copy"))
                 .tooltip("Copy path")
@@ -1984,21 +1957,16 @@ impl SetupView {
                 .small()
                 .on_click(cx.listener(|this, _, _, cx| this.toggle_explorer(cx)))
                 .into_any_element(),
+            Button::new("open-home")
+                .icon(ph("arrow-square-out"))
+                .label("Open folder")
+                .ghost()
+                .small()
+                .on_click(move |_, _, _| {
+                    let _ = open::that(&folder);
+                })
+                .into_any_element(),
         ];
-        if !remote {
-            let folder = home.clone();
-            home_actions.push(
-                Button::new("open-home")
-                    .icon(ph("arrow-square-out"))
-                    .label("Open folder")
-                    .ghost()
-                    .small()
-                    .on_click(move |_, _, _| {
-                        let _ = open::that(&folder);
-                    })
-                    .into_any_element(),
-            );
-        }
         let browser = self.explorer_panel(edge, cx);
         let delete_data = installed.then(|| self.delete_data_row(edge, cx));
         let uninstall_description = UNINSTALL_WARNING.to_owned();
@@ -2575,9 +2543,7 @@ impl SetupView {
 
     fn proxy_pane(&self, cx: &mut Context<Self>) -> AnyElement {
         let mode = self.config.proxy.mode;
-        let system_hint = if self.server.read(cx).connection.is_remote() {
-            "ricochet uses the proxy that `HTTPS_PROXY` names on that machine, if any."
-        } else if cfg!(target_os = "macos") {
+        let system_hint = if cfg!(target_os = "macos") {
             "ricochet uses the proxy set in System Settings under Network. A proxy configuration file (PAC) isn't read."
         } else if cfg!(windows) {
             "ricochet uses the proxy set in Windows Settings under Network & internet. A setup script (PAC) isn't read."
@@ -2674,9 +2640,7 @@ impl SetupView {
 
 impl Render for SetupView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let added = self.dashboard.read(cx).added_server().is_some();
         let shows_dashboard = self.onboarding.is_none()
-            && !(self.server.read(cx).loading && !added)
             && self.instance_inputs.is_none()
             && self.app_settings.is_none()
             && self.showing_content;
@@ -2684,13 +2648,10 @@ impl Render for SetupView {
             self.dashboard
                 .update(cx, |dashboard, cx| dashboard.hide_web(cx));
         }
-        let connecting = self.server.read(cx).loading && !added;
-        let controls = (self.onboarding.is_none() && !connecting).then(|| self.controls(cx));
+        let controls = self.onboarding.is_none().then(|| self.controls(cx));
         let update_bar = controls.as_ref().and_then(|_| self.app_update_bar(cx));
         let body = if let Some(step) = self.onboarding {
             self.onboarding_view(step, cx)
-        } else if connecting {
-            self.connecting_view(cx)
         } else {
             self.workspace(window, cx)
         };

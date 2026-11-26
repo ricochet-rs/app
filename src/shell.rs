@@ -1,4 +1,4 @@
-//! Running commands and touching files on a computer, this one or another over SSH.
+//! Running commands and touching files on this computer.
 
 use crate::command::{self, CommandResult};
 use std::io;
@@ -10,7 +10,10 @@ pub trait Shell: Send + Sync {
     fn read(&self, path: &Path) -> io::Result<Option<Vec<u8>>>;
     /// Writes `contents` to `path`, creating its folder, readable only by this user when `private`.
     fn write(&self, path: &Path, contents: &[u8], private: bool) -> io::Result<()>;
+    /// Only the systemd unit removes files and creates folders through a shell, so its tests can watch.
+    #[cfg(target_os = "linux")]
     fn remove(&self, path: &Path) -> io::Result<()>;
+    #[cfg(target_os = "linux")]
     fn create_dir_all(&self, path: &Path) -> io::Result<()>;
 
     fn read_text(&self, path: &Path) -> io::Result<Option<String>> {
@@ -51,6 +54,7 @@ impl Shell for LocalShell {
         std::fs::rename(&staging, path)
     }
 
+    #[cfg(target_os = "linux")]
     fn remove(&self, path: &Path) -> io::Result<()> {
         match std::fs::remove_file(path) {
             Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
@@ -58,6 +62,7 @@ impl Shell for LocalShell {
         }
     }
 
+    #[cfg(target_os = "linux")]
     fn create_dir_all(&self, path: &Path) -> io::Result<()> {
         std::fs::create_dir_all(path)
     }

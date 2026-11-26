@@ -109,9 +109,6 @@ impl Backend for LocalBackend {
         crate::net::system_proxy()
     }
 
-    /// The app's own proxy setting covers downloads on this computer.
-    fn use_proxy(&self, _environment: &[(String, String)]) {}
-
     fn prepare(&self) -> Result<()> {
         std::fs::create_dir_all(&self.paths.home)?;
         #[cfg(unix)]

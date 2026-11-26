@@ -1,7 +1,6 @@
 //! The server menu, and the All instances page where you open, name, group and drag what it lists.
 
 use super::{SetupView, Step};
-use crate::connections::Connection;
 use crate::servers::{Instance, Placement, Servers};
 use crate::ui::components::heading;
 use crate::ui::dashboard::InstanceChange;
@@ -83,44 +82,33 @@ impl Render for DraggedInstance {
 
 impl SetupView {
     fn arranged(&self, cx: &gpui::App) -> Vec<(Instance, Placement)> {
-        let machines = self.server.read(cx).connected();
-        self.dashboard.read(cx).instances(machines)
+        self.dashboard.read(cx).instances()
     }
 
     /// The instance whose content and settings show.
     fn shown_instance(&self, cx: &gpui::App) -> Instance {
         match self.dashboard.read(cx).added_server() {
             Some(server) => Instance::Added(server),
-            None => Instance::Machine(self.server.read(cx).connection.clone()),
+            None => Instance::Local,
         }
     }
 
-    /// Shows the settings of a machine this app manages, connecting to it first when it is not the current one.
-    fn open_machine_settings(&mut self, connection: Connection, cx: &mut Context<Self>) {
-        let current = self.server.read(cx).connection == connection;
-        self.show_instance(Instance::Machine(connection), cx);
-        if current {
-            self.select(self.section, cx);
-        } else {
-            // The pane loads what it needs once the machine has connected.
-            self.showing_content = false;
-            cx.notify();
-        }
+    /// Shows the settings of ricochet on this computer.
+    fn open_local_settings(&mut self, cx: &mut Context<Self>) {
+        self.show_instance(Instance::Local, cx);
+        self.select(self.section, cx);
     }
 
     fn show_instance(&mut self, instance: Instance, cx: &mut Context<Self>) {
         self.instance_inputs = None;
         match instance {
-            Instance::Machine(connection) => self.show_machine(connection, cx),
+            Instance::Local => self.show_local(cx),
             Instance::Added(server) => self.show_added(server, cx),
         }
     }
 
     /// The server button, which drops a menu of your instances in their groups and ways to add or arrange them.
     pub(super) fn machine_menu(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        // The controller runs one operation on one machine, so only switching machines waits for it.
-        let busy = self.server.read(cx).activity.is_some();
-        let managing = Instance::Machine(self.server.read(cx).connection.clone());
         let shown = self.shown_instance(cx);
         let arranged = self.arranged(cx);
         let name = arranged
@@ -171,13 +159,13 @@ impl SetupView {
                             .name
                             .clone()
                             .unwrap_or_else(|| instance.default_name());
-                        // An added server opens at its address; a machine only while it is the one shown and reachable.
+                        // An added server opens at its address; this computer's only while it is the one shown and reachable.
                         let url = match instance {
                             Instance::Added(server) => Some(server.url.clone()),
-                            Instance::Machine(_) if *instance == shown => in_browser.clone(),
-                            Instance::Machine(_) => None,
+                            Instance::Local if *instance == shown => in_browser.clone(),
+                            Instance::Local => None,
                         };
-                        let has_settings = matches!(instance, Instance::Machine(_));
+                        let has_settings = matches!(instance, Instance::Local);
                         let row = opened;
                         opened += 1;
                         // The Settings button lets its click reach the row, which closes the menu and opens the settings.
@@ -214,17 +202,11 @@ impl SetupView {
                             })
                             .icon(ph(instance.icon()))
                             .checked(*instance == shown)
-                            .disabled(
-                                busy && matches!(instance, Instance::Machine(_))
-                                    && *instance != managing,
-                            )
                             .on_click(move |_, _, cx| {
                                 let target = target.clone();
                                 let settings = wants_settings.take();
                                 view.update(cx, |this, cx| match (&target, settings) {
-                                    (Instance::Machine(connection), true) => {
-                                        this.open_machine_settings(connection.clone(), cx)
-                                    }
+                                    (Instance::Local, true) => this.open_local_settings(cx),
                                     _ => this.show_instance(target, cx),
                                 });
                             }),
@@ -282,7 +264,7 @@ impl SetupView {
         self.add_server(cx);
     }
 
-    /// Shows where ricochet can be installed: this machine or an SSH host.
+    /// Shows the install location step, which installs ricochet on this computer.
     pub(super) fn install_instead(&mut self, cx: &mut Context<Self>) {
         self.instance_inputs = None;
         self.dashboard
@@ -389,15 +371,8 @@ impl SetupView {
     }
 
     fn remove_instance(&mut self, instance: Instance, cx: &mut Context<Self>) {
-        let id = instance.id();
         match instance {
-            Instance::Machine(Connection::Ssh { host }) => {
-                self.server
-                    .update(cx, |server, cx| server.forget(&host, cx));
-                self.dashboard
-                    .update(cx, |dashboard, cx| dashboard.forget_placement(&id, cx));
-            }
-            Instance::Machine(_) => {}
+            Instance::Local => {}
             Instance::Added(server) => self
                 .dashboard
                 .update(cx, |dashboard, cx| dashboard.remove_server(&server, cx)),
@@ -625,8 +600,7 @@ impl SetupView {
             .clone()
             .unwrap_or_else(|| instance.default_name());
         let kind = match &instance {
-            Instance::Machine(Connection::Local) => "On this computer",
-            Instance::Machine(Connection::Ssh { .. }) => "Linux over SSH",
+            Instance::Local => "On this computer",
             Instance::Added(_) => "Added by address",
         };
         let detail = match &placement.name {
@@ -646,11 +620,10 @@ impl SetupView {
         let shown = self.shown_instance(cx);
         let url = match &instance {
             Instance::Added(server) => Some(server.url.clone()),
-            Instance::Machine(_) if instance == shown => self.browser_url(cx),
-            Instance::Machine(_) => None,
+            Instance::Local if instance == shown => self.browser_url(cx),
+            Instance::Local => None,
         };
-        let removable =
-            !matches!(instance, Instance::Machine(Connection::Local)) && instance != shown;
+        let removable = !matches!(instance, Instance::Local) && instance != shown;
         let muted = cx.theme().muted_foreground;
         let ring = cx.theme().ring;
         let hover = cx.theme().muted;
@@ -732,20 +705,17 @@ impl SetupView {
                         })
                 }))
                 .children(match &instance {
-                    Instance::Machine(connection) => {
-                        let connection = connection.clone();
-                        Some(
-                            Button::new(("instance-settings", row))
-                                .icon(ph("gear-six"))
-                                .tooltip("Settings")
-                                .ghost()
-                                .small()
-                                .text_color(muted)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.open_machine_settings(connection.clone(), cx)
-                                })),
-                        )
-                    }
+                    Instance::Local => Some(
+                        Button::new(("instance-settings", row))
+                            .icon(ph("gear-six"))
+                            .tooltip("Settings")
+                            .ghost()
+                            .small()
+                            .text_color(muted)
+                            .on_click(
+                                cx.listener(move |this, _, _, cx| this.open_local_settings(cx)),
+                            ),
+                    ),
                     Instance::Added(_) => None,
                 })
                 .child(more)

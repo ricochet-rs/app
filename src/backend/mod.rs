@@ -1,10 +1,8 @@
-//! A computer ricochet can run on: this one, or another reached over SSH.
+//! The computer ricochet runs on.
 
 mod local;
-mod ssh;
 
 pub use local::LocalBackend;
-pub use ssh::{SshBackend, is_valid_host};
 
 use crate::config::{Proxy, ProxySettings, ServerConfig};
 use crate::controller::ServerStatus;
@@ -91,8 +89,6 @@ pub trait Backend: Send + Sync {
     fn remove_data(&self, paths: &[PathBuf]) -> Result<()>;
     /// The proxy that computer's own settings name, for the Network proxy pane's system choice.
     fn system_proxy(&self) -> Option<Proxy>;
-    /// Sends that computer's downloads of ricochet through the proxy in `environment`.
-    fn use_proxy(&self, environment: &[(String, String)]);
 
     /// The proxy variables ricochet's service gets on that computer, as `settings` choose them.
     fn proxy_environment(&self, settings: &ProxySettings) -> Vec<(String, String)> {
@@ -116,14 +112,6 @@ pub trait Backend: Send + Sync {
     }
     /// Opens ricochet in a browser on this computer.
     fn open_dashboard(&self, port: u16) -> Result<()>;
-    /// Makes ricochet answer on `localhost:port` of this computer, so the app can call its API.
-    fn reach_dashboard(&self, _port: u16) -> Result<()> {
-        Ok(())
-    }
-    /// Keeps ricochet running after you log out of that computer.
-    fn keep_running_after_logout(&self) -> Result<()> {
-        Ok(())
-    }
 
     /// The answers saved on that computer, or `None` before the first setup.
     fn load_config(&self) -> Option<ServerConfig> {

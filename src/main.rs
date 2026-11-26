@@ -5,7 +5,6 @@ mod assets;
 mod backend;
 mod command;
 mod config;
-mod connections;
 mod controller;
 mod error;
 mod net;

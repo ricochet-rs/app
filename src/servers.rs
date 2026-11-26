@@ -1,6 +1,5 @@
 //! The ricochet servers whose web UI the app shows, and how you arranged them.
 
-use crate::connections::Connection;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -12,20 +11,16 @@ pub struct Server {
     pub name: String,
     /// Where the server answers, as seen from this computer.
     pub url: String,
-    /// Whether this app installed the server, so it can start it and reach it through SSH.
+    /// Whether this app installed the server on this computer, so it can start and stop it.
     pub managed: bool,
 }
 
 impl Server {
-    /// The server this app manages on `connection`, answering on `url`.
-    pub fn managed(connection: &Connection, url: String) -> Self {
-        let id = match connection {
-            Connection::Local => "managed:local".to_owned(),
-            Connection::Ssh { host } => format!("managed:ssh:{host}"),
-        };
+    /// The server this app manages on this computer, answering on `url`.
+    pub fn managed(url: String) -> Self {
         Self {
-            id,
-            name: connection.name(),
+            id: "managed:local".to_owned(),
+            name: "This machine".to_owned(),
             url,
             managed: true,
         }
@@ -45,10 +40,10 @@ impl Server {
     }
 }
 
-/// A ricochet instance in the server menu: a machine this app manages, or a server added by address.
+/// A ricochet instance in the server menu: the one this app manages on this computer, or a server added by address.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Instance {
-    Machine(Connection),
+    Local,
     Added(Server),
 }
 
@@ -56,14 +51,14 @@ impl Instance {
     /// What the store files the instance's name, group and place under.
     pub fn id(&self) -> String {
         match self {
-            Self::Machine(connection) => Server::managed(connection, String::new()).id,
+            Self::Local => Server::managed(String::new()).id,
             Self::Added(server) => server.id.clone(),
         }
     }
 
     pub fn default_name(&self) -> String {
         match self {
-            Self::Machine(connection) => connection.name(),
+            Self::Local => Server::managed(String::new()).name,
             Self::Added(server) => server.name.clone(),
         }
     }
@@ -71,8 +66,7 @@ impl Instance {
     /// The Phosphor icon beside the instance.
     pub fn icon(&self) -> &'static str {
         match self {
-            Self::Machine(Connection::Local) => "desktop",
-            Self::Machine(Connection::Ssh { .. }) => "hard-drives",
+            Self::Local => "desktop",
             Self::Added(_) => "globe",
         }
     }
@@ -91,7 +85,7 @@ pub struct Placement {
 /// A group's name, or `None` for instances in no group, and its instances in order.
 pub type Section = (Option<String>, Vec<(Instance, Placement)>);
 
-/// What the dashboard remembers between launches, in `servers.json` next to `connections.json`.
+/// What the dashboard remembers between launches, in `servers.json`.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Servers {
     /// Servers you added by address.
@@ -294,7 +288,7 @@ impl Servers {
     }
 
     /// Forgets the name, group and place of an instance you removed.
-    pub fn forget_placement(&mut self, id: &str) {
+    fn forget_placement(&mut self, id: &str) {
         self.layout.retain(|placement| placement.id != id);
     }
 
@@ -344,10 +338,8 @@ mod tests {
 
     #[test]
     fn instances_keep_the_order_and_groups_you_give_them() {
-        let local = Instance::Machine(Connection::Local);
-        let devbox = Instance::Machine(Connection::Ssh {
-            host: "devbox".into(),
-        });
+        let local = Instance::Local;
+        let devbox = Instance::Added(Server::remote("https://devbox.example.com"));
         let remote = Instance::Added(Server::remote("https://a.example.com"));
         let all = || vec![local.clone(), devbox.clone(), remote.clone()];
         let mut servers = Servers::default();
@@ -371,10 +363,8 @@ mod tests {
 
     #[test]
     fn instances_move_into_a_group_before_another_or_at_its_end() {
-        let local = Instance::Machine(Connection::Local);
-        let devbox = Instance::Machine(Connection::Ssh {
-            host: "devbox".into(),
-        });
+        let local = Instance::Local;
+        let devbox = Instance::Added(Server::remote("https://devbox.example.com"));
         let remote = Instance::Added(Server::remote("https://a.example.com"));
         let all = || vec![local.clone(), devbox.clone(), remote.clone()];
         let order = |servers: &Servers| -> Vec<String> {
@@ -407,7 +397,7 @@ mod tests {
 
     #[test]
     fn renaming_a_group_renames_it_for_each_instance() {
-        let local = Instance::Machine(Connection::Local);
+        let local = Instance::Local;
         let remote = Instance::Added(Server::remote("https://a.example.com"));
         let all = || vec![local.clone(), remote.clone()];
         let mut servers = Servers::default();
