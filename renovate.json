@@ -3,12 +3,6 @@
   "extends": ["github>ricochet-rs/renovate-config"],
   "packageRules": [
     {
-      "description": "GPUI's HTTP client pulls in xattr 0.2.3, which reads libc::ENOATTR on Linux, and libc 0.2.190 removed it.",
-      "matchManagers": ["cargo"],
-      "matchPackageNames": ["libc"],
-      "allowedVersions": "<0.2.190"
-    },
-    {
       "description": "wry pins webkit2gtk 2.0.1, which links gtk 0.18, and only one gtk-sys may link gtk-3.",
       "matchManagers": ["cargo"],
       "matchPackageNames": ["gtk"],

@@ -16,8 +16,7 @@ gpui_platform = { package = "gpui-pre-platform", version = "=0.3.14", features =
 # The server's web UI runs in the system's webview: WKWebView on macOS, WebView2 on Windows and WebKitGTK on Linux.
 gpui-webview = "0.11.0"
 wry = { package = "lb-wry", version = "0.53.3", default-features = false }
-# GPUI's HTTP client pulls in xattr 0.2.3, which reads libc::ENOATTR on Linux, and libc 0.2.190 removed it.
-libc = ">=0.2.182, <0.2.190"
+libc = "0.2.191"
 open = "5.4.5"
 rust-embed = "8"
 serde = { version = "1.0.229", features = ["derive"] }
