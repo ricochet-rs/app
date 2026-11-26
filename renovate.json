@@ -12,7 +12,7 @@
       "description": "No test renders the UI, so a person reviews every GPUI release before it merges.",
       "groupName": "gpui",
       "matchManagers": ["cargo"],
-      "matchPackageNames": ["gpui", "gpui-component", "gpui-component-assets"],
+      "matchPackageNames": ["gpui-pre", "gpui-pre-platform", "gpui-component", "gpui-kit-assets", "gpui-webview"],
       "automerge": false
     },
     {

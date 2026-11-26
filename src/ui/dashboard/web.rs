@@ -4,10 +4,8 @@
 use super::DashboardView;
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Entity, Window, div};
-use gpui_component::webview::WebView;
-use gpui_component::wry::{
-    NewWindowResponse, ProxyConfig, ProxyEndpoint, WebContext, WebViewBuilder,
-};
+use gpui_webview::WebView;
+use wry::{NewWindowResponse, ProxyConfig, ProxyEndpoint, WebContext, WebViewBuilder};
 
 /// One webview, with the folder it keeps cookies and storage in.
 struct Slot {
@@ -48,9 +46,6 @@ impl Slot {
 pub struct Web {
     direct: Slot,
     proxied: Slot,
-    /// Advances GTK's loop, which WebKitGTK needs and GPUI doesn't run.
-    #[cfg(target_os = "linux")]
-    gtk_loop: Option<gpui::Task<()>>,
 }
 
 impl Default for Web {
@@ -58,8 +53,6 @@ impl Default for Web {
         Self {
             direct: Slot::new("webview"),
             proxied: Slot::new("webview-proxy"),
-            #[cfg(target_os = "linux")]
-            gtk_loop: None,
         }
     }
 }
@@ -118,13 +111,12 @@ impl DashboardView {
                         builder.with_proxy_config(ProxyConfig::Http(ProxyEndpoint { host, port }));
                     #[cfg(target_os = "macos")]
                     {
-                        use gpui_component::wry::WebViewBuilderExtDarwin;
+                        use wry::WebViewBuilderExtDarwin;
                         builder = builder.with_data_store_identifier(PROXIED_STORE);
                     }
                 }
-                let built = builder.build_as_child(&parent(window));
-                built.map(|built| {
-                    let view = cx.new(|cx| WebView::new(built, window, cx));
+                WebView::build(builder, window, cx).map(|built| {
+                    let view = cx.new(|_| built);
                     slot.view = Some(view.clone());
                     slot.proxy = proxy.clone();
                     view
@@ -138,10 +130,6 @@ impl DashboardView {
                 return self.centered(div().child(message), cx).into_any_element();
             }
         };
-        #[cfg(target_os = "linux")]
-        if self.web.gtk_loop.is_none() {
-            self.web.gtk_loop = Some(linux::run_gtk(cx));
-        }
         if proxy.is_some() {
             self.web.proxied.loaded = Some(url);
         } else {
@@ -161,26 +149,9 @@ impl DashboardView {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
-fn parent(window: &Window) -> &Window {
-    window
-}
-
-#[cfg(target_os = "linux")]
-use linux::parent;
-
-/// WebKitGTK on Linux: wry embeds it only in an X11 window, and only through GTK's own loop.
+/// WebKitGTK on Linux, which wry embeds only in an X11 window.
 #[cfg(target_os = "linux")]
 pub mod linux {
-    use gpui::{Context, Task, Window};
-    use raw_window_handle::{
-        HandleError, HasWindowHandle, RawWindowHandle, WindowHandle, XlibWindowHandle,
-    };
-    use std::time::Duration;
-
-    /// How often GTK's loop runs while the web UI exists: often enough to scroll smoothly at 60 frames a second.
-    const GTK_TICK: Duration = Duration::from_millis(16);
-
     /// Runs the app on X11, through XWayland under Wayland, and starts GTK, before GPUI opens a window.
     /// Call it first in `main`, while the app has a single thread.
     pub fn prepare() {
@@ -193,38 +164,6 @@ pub mod linux {
         }
         if let Err(error) = gtk::init() {
             eprintln!("GTK didn't start, so the web UI can't show: {error}");
-        }
-    }
-
-    pub fn run_gtk<T: 'static>(cx: &mut Context<T>) -> Task<()> {
-        cx.spawn(async move |_, cx| {
-            loop {
-                while gtk::events_pending() {
-                    gtk::main_iteration_do(false);
-                }
-                cx.background_executor().timer(GTK_TICK).await;
-            }
-        })
-    }
-
-    /// GPUI hands out an XCB handle, and wry takes only an Xlib one; both name the same X window.
-    pub struct X11Parent(Option<u32>);
-
-    pub fn parent(window: &Window) -> X11Parent {
-        let id = match HasWindowHandle::window_handle(window).map(|handle| handle.as_raw()) {
-            Ok(RawWindowHandle::Xcb(handle)) => Some(handle.window.get()),
-            Ok(RawWindowHandle::Xlib(handle)) => u32::try_from(handle.window).ok(),
-            _ => None,
-        };
-        X11Parent(id)
-    }
-
-    impl HasWindowHandle for X11Parent {
-        fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
-            let id = self.0.ok_or(HandleError::NotSupported)?;
-            let handle = XlibWindowHandle::new(id.into());
-            // SAFETY: the X window belongs to GPUI's window, which outlives the webview inside it.
-            Ok(unsafe { WindowHandle::borrow_raw(handle.into()) })
         }
     }
 }

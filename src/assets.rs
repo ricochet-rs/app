@@ -16,7 +16,7 @@ impl AssetSource for Assets {
         if let Some(file) = Phosphor::get(path) {
             return Ok(Some(file.data));
         }
-        gpui_component_assets::Assets.load(path)
+        gpui_kit_assets::Assets.load(path)
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
@@ -24,7 +24,7 @@ impl AssetSource for Assets {
             .filter(|p| p.starts_with(path))
             .map(|p| p.to_string().into())
             .collect();
-        found.extend(gpui_component_assets::Assets.list(path)?);
+        found.extend(gpui_kit_assets::Assets.list(path)?);
         Ok(found)
     }
 }

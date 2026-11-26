@@ -30,8 +30,7 @@ use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::select::{Select, SelectEvent, SelectState};
 use gpui_component::switch::Switch;
 use gpui_component::{
-    ActiveTheme, Disableable, Icon, IconName, IndexPath, Root, Sizable, WindowExt as _, h_flex,
-    v_flex,
+    ActiveTheme, Disableable, Icon, IconName, IndexPath, Sizable, WindowExt as _, h_flex, v_flex,
 };
 use std::collections::HashMap;
 
@@ -2038,7 +2037,7 @@ impl SetupView {
     fn confirm_uninstall(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let message = UNINSTALL_WARNING.to_owned();
         let server = self.server.clone();
-        window.open_dialog(cx, move |dialog, _, _| {
+        window.open_alert_dialog(cx, move |dialog, _, _| {
             let server = server.clone();
             dialog
                 .title(prose("Uninstall ricochet?"))
@@ -2190,7 +2189,7 @@ impl SetupView {
                                 .dropdown_caret(true)
                                 .disabled(changing)
                                 .dropdown_menu_with_anchor(
-                                    gpui::Corner::TopRight,
+                                    gpui::Anchor::TopRight,
                                     move |mut menu, _, _| {
                                         for role in Role::ALL {
                                             let person = person_for_click.clone();
@@ -2731,11 +2730,10 @@ impl SetupView {
                 let pressed = self.focus_at_press.clone();
                 move |_, window, cx| {
                     if *pressed.borrow() == window.focused(cx) {
-                        window.blur();
+                        window.blur(cx);
                     }
                 }
             })
-            .children(Root::render_dialog_layer(window, cx))
             .into_any_element()
     }
 }

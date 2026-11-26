@@ -9,10 +9,13 @@ chrono = "0.4.45"
 dirs = "7.0.0"
 flate2 = "1.1.11"
 futures = "0.3.34"
-gpui = { version = "0.2.2", features = ["runtime_shaders"] }
+gpui = { package = "gpui-pre", version = "=0.3.14" }
+gpui-component = "0.11.0"
+gpui-kit-assets = "0.11.0"
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.14", features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
 # The server's web UI runs in the system's webview: WKWebView on macOS, WebView2 on Windows and WebKitGTK on Linux.
-gpui-component = { version = "0.11.0", features = ["webview"] }
-gpui-component-assets = "0.5.1"
+gpui-webview = "0.11.0"
+wry = { package = "lb-wry", version = "0.53.3", default-features = false }
 # GPUI's HTTP client pulls in xattr 0.2.3, which reads libc::ENOATTR on Linux, and libc 0.2.190 removed it.
 libc = ">=0.2.182, <0.2.190"
 open = "5.4.5"
@@ -38,15 +41,11 @@ wry = { package = "lb-wry", version = "0.53.3", default-features = false, featur
 # WebKitGTK draws the web UI on Linux; wry embeds it only in an X11 window, so the app runs on X11 there.
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
-raw-window-handle = "0.6"
 
 # GPUI precompiles its Windows shaders with fxc.exe only when it builds on Windows, so the cross-compiled
-# Windows build keeps its debug assertions on, which makes GPUI compile those shaders at run time.
+# Windows build keeps the debug assertions of gpui-pre-windows on, which makes it compile those shaders at run time.
 [profile.windows]
 inherits = "release"
 
-[profile.windows.package.gpui]
-debug-assertions = true
-
-[profile.windows.package.gpui-macros]
+[profile.windows.package.gpui-pre-windows]
 debug-assertions = true

@@ -83,10 +83,9 @@ Set `HOME` inside ricochet's folder, and point `JULIAUP_DEPOT_PATH` and `UV_PYTH
 
 ## Content
 
-Show a server's own web UI in the system webview through gpui-component's `webview` feature, WKWebView on macOS, WebView2 on Windows and WebKitGTK on Linux, so the app and the server share one UI and every page works through a browser session.
+Show a server's own web UI in the system webview through the `gpui-webview` crate, WKWebView on macOS, WebView2 on Windows and WebKitGTK on Linux, so the app and the server share one UI and every page works through a browser session.
 Run the app on X11 on Linux, through XWayland under Wayland, and start GTK before GPUI in `linux_webview::prepare`, because wry embeds WebKitGTK only in an X11 window.
-Advance GTK's loop from a GPUI timer while the webview exists, because GPUI doesn't run it and WebKitGTK paints nothing without it.
-Hand wry an Xlib handle on Linux, because GPUI gives out an XCB one and wry accepts only Xlib; both name the same X window.
+Build every webview with `gpui_webview::WebView::build`, because on Linux it advances GTK's loop from a GPUI timer, which WebKitGTK paints nothing without, and hands wry the Xlib handle it needs instead of GPUI's XCB one.
 Put the app's own controls, the server menu, the managed server's status and its actions, in the title bar beside the window buttons on macOS and Windows, and leave the rest of the window to the web UI.
 Open and close a managed machine's settings with ⌘, on macOS and Ctrl+, elsewhere, the **Settings…** item in the app menu and the title bar's settings button, through the `ToggleSettings` action registered on the app, because a key binding inside the window never fires while the webview has focus.
 Defer the window update in an app-level action handler with `cx.defer`, because GPUI runs the handler while it holds the window and a nested `WindowHandle::update` fails silently.
@@ -126,7 +125,7 @@ The repository is private, so every run of `mac.yml` bills macOS minutes; it run
 `mac.yml` starts on the tag push, not on the release, and waits for Crow's release before it uploads, because Crow only edits a release that already exists and GitHub fires no `published` event for that.
 Build the AppImage on Debian bookworm, the oldest Debian that still gets security updates, because the glibc it links against sets the oldest distribution it runs on.
 Start a script in a Debian container with `set -eu`, never `-o pipefail`, because Crow runs it with dash.
-Cross-compile Windows with cargo-xwin and the `windows` Cargo profile, because no Windows agent exists and GPUI precompiles its Windows shaders only when it builds on Windows; that profile keeps GPUI's debug assertions on, which makes it compile them at run time.
+Cross-compile Windows with cargo-xwin and the `windows` Cargo profile, because no Windows agent exists and GPUI precompiles its Windows shaders only when it builds on Windows; that profile keeps the debug assertions of `gpui-pre-windows` on, which makes it compile them at run time.
 Run `just lint-windows` beside `just lint`, in `test.yaml` too, because the Linux and macOS lints never compile the Windows-only code.
 Keep `linux.yaml` and `windows.yaml` depending on `release`, because `gh release upload` needs the release `release.yaml` creates.
 Write Crow metadata in brace form (`${CI_COMMIT_TAG}`) and shell-local variables bare or with `$$`, because Crow expands `${...}` before the shell runs, as ricochet's root `CLAUDE.md` explains.
