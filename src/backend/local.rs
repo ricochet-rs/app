@@ -1,5 +1,6 @@
 use super::{Backend, DirEntry, sort_entries};
 use crate::command;
+use crate::config::ServerConfig;
 use crate::error::{AppError, Result};
 use crate::paths::Paths;
 use crate::ports::NetworkPorts;
@@ -99,6 +100,17 @@ impl Backend for LocalBackend {
 
     fn is_port_free(&self, port: u16) -> bool {
         NetworkPorts::is_free(port)
+    }
+
+    fn move_taken_ports(&self) -> Result<()> {
+        let Some(existing) = self.shell.read_text(&self.paths.config)? else {
+            return Ok(());
+        };
+        if let Some(text) = ServerConfig::move_taken_ports(&existing, &NetworkPorts::is_free) {
+            self.shell
+                .write(&self.paths.config, text.as_bytes(), true)?;
+        }
+        Ok(())
     }
 
     fn install_release(&self, release: &Release) -> Result<()> {

@@ -41,6 +41,8 @@ fn main() {
             gpui_component::init(cx);
             ui::theme::apply(None, cx);
 
+            // Closing the window quits on macOS too, so ricochet stops with it.
+            cx.set_quit_mode(gpui::QuitMode::LastWindowClosed);
             cx.on_action(|_: &Quit, cx| cx.quit());
             let (quit, settings) = if cfg!(target_os = "macos") {
                 ("cmd-q", "cmd-,")

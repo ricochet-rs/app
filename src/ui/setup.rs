@@ -305,7 +305,12 @@ impl SetupView {
                 .spawn(async move { installing.install().and_then(|()| updater::relaunch()) })
                 .await;
             let _ = this.update(cx, |this, cx| match result {
-                Ok(()) => cx.quit(),
+                Ok(()) => {
+                    // The new copy already runs and keeps using this ricochet.
+                    this.server
+                        .update(cx, |server, _| server.keep_running_on_quit = true);
+                    cx.quit();
+                }
                 Err(error) => {
                     this.app_update = AppUpdate::Failed(update, error.to_string());
                     cx.notify();

@@ -114,12 +114,22 @@ impl ServerConfig {
             table.get("network").and_then(|n| n.as_table_like()),
             is_free,
         );
-        let network = table.section("network");
-        network.insert("proxy_port", value(i64::from(ports.proxy)));
-        network.insert("api_port", value(i64::from(ports.api)));
-        network.insert("reload_port", value(i64::from(ports.reload)));
-        network.insert("metrics", value(format!("127.0.0.1:{}", ports.metrics)));
+        ports.write(table.section("network"));
         Ok(document.to_string())
+    }
+
+    /// Config text with each internal port that another app now holds, or that is an old default, moved to a free one.
+    /// Returns `None` when every port can stay or `existing` names no ports, and must run only while ricochet is stopped.
+    pub fn move_taken_ports(existing: &str, is_free: &dyn Fn(u16) -> bool) -> Option<String> {
+        let mut document = existing.parse::<DocumentMut>().ok()?;
+        let network = document.get_mut("network")?.as_table_like_mut()?;
+        let saved = NetworkPorts::saved(&*network)?;
+        let ports = NetworkPorts::rechecked(saved.proxy, Some(&*network), is_free);
+        if ports == saved {
+            return None;
+        }
+        ports.write(network);
+        Some(document.to_string())
     }
 
     /// The answers in config text read from a computer, or `None` when it does not parse.
@@ -325,6 +335,24 @@ entity_id = "https://old.example.com"
                 .unwrap();
         let ports = NetworkPorts::new(6188, Some(network.as_table()), &|_| true);
         assert_eq!([ports.api, ports.reload, ports.metrics], [4321, 4322, 4323]);
+    }
+
+    #[test]
+    fn a_port_another_app_took_moves_and_the_rest_stay() {
+        let existing = "home = \"/h\"\n\n[network]\nproxy_port = 6188\napi_port = 50000\nreload_port = 50001\nmetrics = \"127.0.0.1:50002\"\n";
+        assert_eq!(ServerConfig::move_taken_ports(existing, &|_| true), None);
+        let moved = ServerConfig::move_taken_ports(existing, &|port| port != 50001).unwrap();
+        let document: DocumentMut = moved.parse().unwrap();
+        let table: &dyn TableLike = document.as_table();
+        let network = table.child("network").unwrap();
+        assert_eq!(network.int("proxy_port"), Some(6188));
+        assert_eq!(network.int("api_port"), Some(50000));
+        assert_ne!(network.int("reload_port"), Some(50001));
+        assert_eq!(
+            network.string("metrics").as_deref(),
+            Some("127.0.0.1:50002")
+        );
+        assert_eq!(table.string("home").as_deref(), Some("/h"));
     }
 
     #[test]
