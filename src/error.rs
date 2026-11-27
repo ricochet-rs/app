@@ -18,8 +18,6 @@ pub enum AppError {
     Download(String),
     #[error("Couldn't start ricochet in the background. {0}")]
     Service(String),
-    #[error("{0}")]
-    Connection(String),
     #[error("{}", did_not_start(.0))]
     DidNotStart(String),
     #[error("{0}")]

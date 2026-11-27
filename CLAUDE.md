@@ -15,21 +15,21 @@ If authentication, synchronization, HEAD validation, or a required read fails, s
 
 ## Scope
 
-The app is a simple way to install ricochet's Community Edition for local development, and to install and configure ricochet on remote Linux hosts over SSH.
+The app is a simple way to install ricochet's Community Edition on this computer for local development, and to show any ricochet server by its address.
+Install only on this computer, and point people who want ricochet on a server to the installation guide in `INSTALLATION_DOCS`, because the app can't supervise a server it doesn't run on.
 It builds for Apple Silicon macOS, x86_64 Linux and x86_64 Windows.
 Never write a `[backend]` section, because content runs as processes on the machine and Kubernetes and containers are out of scope.
 The content area in `src/ui/dashboard/` shows a server's own web UI, for the managed server and for any server added by address.
-List managed machines and added servers in the one server menu of `SetupView`, and show settings only for a managed machine, so the window never has two switchers that both mean "which server".
-List only the machines you connected to in that menu, never every host in the SSH config, which only the add-machine step offers.
-Keep that menu open while the managed server starts, stops or restarts, and disable only the other managed machines in it, because the controller runs one operation on one backend and a switch would apply its result to the wrong machine.
-End that menu with **Connect to a server**, which adds a running server by its address, and **Install ricochet**, which installs ricochet on this computer or an SSH host, and give each managed machine's row a **Settings** button, because people otherwise can't tell how to add another machine or reach a machine's settings once ricochet is installed.
+List this computer and added servers in the one server menu of `SetupView`, and show settings only for this computer, so the window never has two switchers that both mean "which server".
+Keep that menu open while ricochet starts, stops or restarts, because it only switches what the content area shows.
+End that menu with **Connect to a server**, which adds a running server by its address, and **Install ricochet**, which installs ricochet on this computer, and give this computer's row a **Settings** button, because people otherwise can't tell how to add a server or reach the settings once ricochet is installed.
 Arrange instances on the **All instances** page by dragging rows between groups, and keep the groups you made in `servers.json` even when empty, because a group exists only through its instances otherwise and vanishes as you drag its last one out.
 Offer OpenID Connect and Entra only: ricochet refuses a SAML assertion consumer URL that is not `https`, and the server here serves `http://localhost`.
 
 ## App
 
 Keep `LSUIElement` out of `Support/Info.plist`, because without a Dock icon or ⌘-Tab entry the window falls behind other apps with nothing to bring it back.
-Compile the systemd code on every platform, because the SSH backend drives a Linux server's systemd from macOS and Windows too.
+Compile the systemd code on Linux only, because no other platform runs ricochet under systemd, and the lints fail on code nothing calls.
 
 ## Server process
 
@@ -38,10 +38,8 @@ Write an absolute `home` and pass `--config`, because launchd starts the job in 
 Turn on `logs.file_logging`, because launchd appends stdout to its file forever and never rotates it.
 Probe the proxy port only when the person changed it, before stopping the server, and with `SO_REUSEADDR`, because ricochet's own just-closed connections make its port look taken right after it stops.
 Keep the ports already saved in `[network]` instead of probing again, so a save never moves ricochet's internal ports.
-Give the SSH tunnel its own connection with `ControlPath=none`, because a shared control master takes over the forward, lets `ssh` exit, and keeps the port after the app quits.
 Start the server on Windows through a `Run` entry under `HKCU` and `ricochet-launcher.exe`, because that needs no admin rights, and the launcher hides the console window and restarts the server after a crash.
 Spawn every process through `command::new`, because Windows flashes a console window for each console program the app runs.
-Leave SSH connection sharing off on Windows, because its OpenSSH has no `ControlMaster`.
 
 ## Configuration
 
@@ -54,12 +52,12 @@ Sort R repositories by name when saving, because ricochet reads them in name ord
 
 ## Proxy
 
-Keep each managed machine's proxy in `[desktop.proxy]` of its `ricochet-config.toml`, a table ricochet ignores, because ricochet has no proxy setting and a remote host can sit behind a different proxy than this computer.
+Keep ricochet's proxy in `[desktop.proxy]` of its `ricochet-config.toml`, a table ricochet ignores, because ricochet has no proxy setting and the app's own proxy can differ from the one ricochet needs.
 Write nothing for the system choice, so a config without the table follows the machine's own settings.
 Give ricochet's service `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` in both cases, through the launchd job, the systemd unit or the Windows launcher's `--env` arguments, because launchd, systemd and the `Run` entry start it without the proxy variables of a shell, and R, Python and Git read them from the environment.
-Keep the proxy out of command lines and world-readable files, because its URL can hold a password: write the launchd job and the systemd unit readable by their owner only, and hand it to a remote install through stdin.
+Keep the proxy out of command lines and world-readable files, because its URL can hold a password: write the launchd job and the systemd unit readable by their owner only.
 Always put `localhost`, `127.0.0.1` and `::1` in `NO_PROXY`, and reach ricochet's health check without a proxy, because the app and ricochet talk to each other on this machine.
-Read the system proxy from `scutil --proxy` on macOS, the `Internet Settings` registry key on Windows, and `HTTPS_PROXY` elsewhere, including a login shell on an SSH host; PAC files aren't read.
+Read the system proxy from `scutil --proxy` on macOS, the `Internet Settings` registry key on Windows, and `HTTPS_PROXY` elsewhere; PAC files aren't read.
 Keep the app's own proxy in `settings.json` next to `servers.json`, readable by its owner only, and show it in the **App settings** dialog, which the server menu opens, because the app may need a proxy to reach a server before any machine is set up.
 Send the app's own downloads through `net::download`, which uses that setting.
 Leave the webview on the operating system's proxy, which already handles PAC, unless you entered a proxy yourself.
@@ -87,7 +85,7 @@ Show a server's own web UI in the system webview through the `gpui-webview` crat
 Run the app on X11 on Linux, through XWayland under Wayland, and start GTK before GPUI in `linux_webview::prepare`, because wry embeds WebKitGTK only in an X11 window.
 Build every webview with `gpui_webview::WebView::build`, because on Linux it advances GTK's loop from a GPUI timer, which WebKitGTK paints nothing without, and hands wry the Xlib handle it needs instead of GPUI's XCB one.
 Put the app's own controls, the server menu, the managed server's status and its actions, in the title bar beside the window buttons on macOS and Windows, and leave the rest of the window to the web UI.
-Open and close a managed machine's settings with ⌘, on macOS and Ctrl+, elsewhere, the **Settings…** item in the app menu and the title bar's settings button, through the `ToggleSettings` action registered on the app, because a key binding inside the window never fires while the webview has focus.
+Open and close this computer's settings with ⌘, on macOS and Ctrl+, elsewhere, the **Settings…** item in the app menu and the title bar's settings button, through the `ToggleSettings` action registered on the app, because a key binding inside the window never fires while the webview has focus.
 Defer the window update in an app-level action handler with `cx.defer`, because GPUI runs the handler while it holds the window and a nested `WindowHandle::update` fails silently.
 Open **App settings** with the same shortcut and button when the instance shown has no settings of its own, such as a server added by address, so the shortcut never does nothing.
 Hide the webview whenever something else must show over the content area, such as the server menu, because the system draws it above the GPUI window.
@@ -95,12 +93,11 @@ Keep Cut, Copy, Paste and Select All in the app's Edit menu as `MenuItem::os_act
 Leave the web UI out of the workspace while the **App settings** dialog shows, rather than covering it, because the server menu uncovers the web UI when it closes, after the item that opened the dialog has run.
 Hand only `http` and `https` links from the webview to the browser, because content on the server can ask to open any URL.
 Keep the webview's cookies and storage in the app's data folder, because WebView2 can't write next to the program.
-Open a managed SSH server's tunnel through `Backend::reach_dashboard` before showing its web UI, because the server answers on `localhost` only while the tunnel is up.
 Link the AppImage against the system's GTK and WebKitGTK instead of bundling them, because WebKitGTK starts helper processes from fixed paths and needs the system's GLib.
 
 ## Uninstall
 
-Move what uninstall removes to the Trash on macOS and the Recycle Bin on Windows, and delete it on a Linux server, which has no Trash; the confirmation says ricochet and all of its folders will be deleted.
+Move what uninstall removes to the Trash on macOS and Linux and the Recycle Bin on Windows; the confirmation says ricochet and all of its folders will be deleted.
 Keep the app itself on uninstall; it returns to the setup state so you can install ricochet again.
 Leave juliaup's Julia installs and uv's Pythons alone, because the person installed those, not the app.
 

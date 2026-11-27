@@ -2,7 +2,6 @@
 
 use crate::backend::{Backend, LocalBackend};
 use crate::config::ServerConfig;
-use crate::connections::{Connection, Store, discover_ssh_hosts};
 use crate::error::{AppError, Result};
 use crate::paths::Paths;
 use crate::release::Release;
@@ -35,9 +34,7 @@ struct Update {
     configured: Option<bool>,
     proxy_port: Option<Option<u16>>,
     open_dashboard: bool,
-    /// The computer now being managed, once connected.
-    connection: Option<(Connection, Arc<dyn Backend>)>,
-    /// The answers saved on that computer.
+    /// The answers saved on this computer.
     saved: Option<Option<ServerConfig>>,
 }
 
@@ -58,10 +55,6 @@ impl Progress {
 
 pub struct ServerController {
     backend: Arc<dyn Backend>,
-    pub connection: Connection,
-    store: Store,
-    /// SSH hosts found in your SSH config.
-    pub discovered: Vec<String>,
     pub status: ServerStatus,
     pub installed: Option<Release>,
     latest: Option<Release>,
@@ -70,31 +63,19 @@ pub struct ServerController {
     pub is_configured: bool,
     /// The port ricochet serves on as last saved, or `None` before the first setup.
     pub proxy_port: Option<u16>,
-    /// The answers saved on the computer being managed, and a count that grows each time they are read again.
+    /// The answers saved on this computer, and a count that grows each time they are read again.
     pub saved: Option<ServerConfig>,
     pub generation: u64,
-    /// Whether the last-used SSH computer is still being reached on launch.
-    pub loading: bool,
     /// Whether `installed` and `status` still await their first full read on this computer.
     pub checking: bool,
 }
 
 impl ServerController {
     pub fn new(cx: &mut Context<Self>) -> Self {
-        let store = Store::load();
-        let connection = store.active.clone().unwrap_or(Connection::Local);
         let backend: Arc<dyn Backend> = Arc::new(LocalBackend::new());
-        let reconnect = connection.is_remote();
-        let saved = if reconnect {
-            None
-        } else {
-            backend.load_config()
-        };
+        let saved = backend.load_config();
         let this = Self {
             backend,
-            connection,
-            store,
-            discovered: discover_ssh_hosts(),
             status: ServerStatus::Stopped,
             installed: None,
             latest: None,
@@ -104,7 +85,6 @@ impl ServerController {
             proxy_port: saved.as_ref().and_then(|config| config.server.proxy_port()),
             saved,
             generation: 0,
-            loading: reconnect,
             checking: true,
         };
         cx.spawn(async move |this, cx| Self::watch(this, cx).await)
@@ -114,23 +94,6 @@ impl ServerController {
 
     pub fn backend(&self) -> Arc<dyn Backend> {
         self.backend.clone()
-    }
-
-    /// The computers you connected to: this one and the SSH hosts you added.
-    pub fn connected(&self) -> Vec<Connection> {
-        self.store.connected()
-    }
-
-    /// Forgets an SSH host you added; the one being managed stays until you switch away.
-    pub fn forget(&mut self, host: &str, cx: &mut Context<Self>) {
-        self.store.forget(host);
-        self.store.save();
-        cx.notify();
-    }
-
-    /// Every computer to offer: this one, hosts you saved, and hosts from your SSH config.
-    pub fn choices(&self) -> Vec<Connection> {
-        self.store.choices(&self.discovered)
     }
 
     /// Where you open ricochet, as seen from this computer.
@@ -172,26 +135,7 @@ impl ServerController {
         cx.notify();
     }
 
-    /// Logs in to `connection` and shows what ricochet looks like there.
-    pub fn switch(&mut self, connection: Connection, cx: &mut Context<Self>) {
-        let activity = format!("Connecting to {}", connection.name());
-        self.perform(&activity, "Couldn't connect", cx, move |_, _| {
-            let backend = connection.connect()?;
-            let saved = backend.load_config();
-            if let Some(config) = &saved {
-                backend.use_proxy(&backend.proxy_environment(&config.proxy));
-            }
-            Ok(Update {
-                configured: Some(saved.is_some()),
-                proxy_port: Some(saved.as_ref().and_then(|c| c.server.proxy_port())),
-                connection: Some((connection, backend)),
-                saved: Some(saved),
-                ..Update::default()
-            })
-        });
-    }
-
-    pub fn set_up(&mut self, config: ServerConfig, keep_running: bool, cx: &mut Context<Self>) {
+    pub fn set_up(&mut self, config: ServerConfig, cx: &mut Context<Self>) {
         let saved_port = self.proxy_port;
         let installed = self.installed.is_some();
         self.perform(
@@ -204,9 +148,7 @@ impl ServerController {
                 if Some(port) != saved_port && !backend.is_port_free(port) {
                     return Err(AppError::PortInUse(port));
                 }
-                // The proxy reaches the service's environment and this setup's own downloads.
                 let environment = backend.proxy_environment(&config.proxy);
-                backend.use_proxy(&environment);
                 progress.activity("Stopping ricochet");
                 backend.service().stop()?;
                 if !installed {
@@ -216,10 +158,6 @@ impl ServerController {
                 backend.prepare()?;
                 backend.save_config(&config, port)?;
                 backend.service().write_job(&environment)?;
-                if keep_running {
-                    // Lingering is a convenience, so a refusal must not undo an install that works.
-                    let _ = backend.keep_running_after_logout();
-                }
                 progress.activity("Starting ricochet");
                 backend.service().start()?;
                 backend.wait_until_running(port)?;
@@ -228,7 +166,6 @@ impl ServerController {
                     proxy_port: Some(Some(port)),
                     open_dashboard: true,
                     saved: Some(Some(config)),
-                    ..Update::default()
                 })
             },
         );
@@ -396,18 +333,8 @@ impl ServerController {
         cx: &mut Context<Self>,
     ) {
         self.activity = None;
-        self.loading = false;
         match result {
             Ok(update) => {
-                if let Some((connection, backend)) = update.connection {
-                    self.backend = backend;
-                    self.store.remember(&connection);
-                    self.store.save();
-                    self.connection = connection;
-                    self.installed = None;
-                    self.status = ServerStatus::Stopped;
-                    self.checking = true;
-                }
                 if let Some(saved) = update.saved {
                     self.saved = saved;
                     self.generation += 1;
@@ -464,14 +391,9 @@ impl ServerController {
 
     async fn watch(this: WeakEntity<Self>, cx: &mut AsyncApp) {
         let started = this.update(cx, |this, cx| {
-            if this.loading {
-                let connection = this.connection.clone();
-                this.switch(connection, cx);
-            } else {
-                this.refresh(true, cx);
-                if this.is_configured {
-                    this.restart_if_job_changed(cx);
-                }
+            this.refresh(true, cx);
+            if this.is_configured {
+                this.restart_if_job_changed(cx);
             }
         });
         if started.is_err() {
@@ -518,7 +440,6 @@ impl ServerController {
                     .load_config()
                     .map(|config| backend.proxy_environment(&config.proxy))
                     .unwrap_or_default();
-                backend.use_proxy(&environment);
                 if backend.service().write_job(&environment)? && backend.service().is_loaded() {
                     backend.service().stop()?;
                     backend.service().start()?;
@@ -533,9 +454,8 @@ impl ServerController {
     fn log_failure(&self, title: &str, step: &str, error: &AppError) {
         let local = Paths::new();
         let entry = format!(
-            "{} {title} while {step} ({}): {error}\n",
-            chrono::Utc::now().to_rfc3339(),
-            self.connection.name()
+            "{} {title} while {step}: {error}\n",
+            chrono::Utc::now().to_rfc3339()
         );
         let _ = std::fs::create_dir_all(&local.app_support);
         if let Ok(mut log) = std::fs::OpenOptions::new()

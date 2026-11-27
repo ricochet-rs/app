@@ -5,6 +5,7 @@ use crate::error::Result;
 #[cfg(target_os = "macos")]
 mod launchd;
 
+#[cfg(target_os = "linux")]
 mod systemd;
 #[cfg(windows)]
 mod windows;
@@ -33,15 +34,10 @@ pub fn server(paths: std::sync::Arc<crate::paths::Paths>) -> Box<dyn Service> {
 
 #[cfg(target_os = "linux")]
 pub fn server(paths: std::sync::Arc<crate::paths::Paths>) -> Box<dyn Service> {
-    systemd_unit(paths, std::sync::Arc::new(crate::shell::LocalShell))
-}
-
-/// The systemd user unit on a Linux computer reached through `shell`.
-pub fn systemd_unit(
-    paths: std::sync::Arc<crate::paths::Paths>,
-    shell: std::sync::Arc<dyn crate::shell::Shell>,
-) -> Box<dyn Service> {
-    Box::new(systemd::UserUnit::new(paths, shell))
+    Box::new(systemd::UserUnit::new(
+        paths,
+        std::sync::Arc::new(crate::shell::LocalShell),
+    ))
 }
 
 #[cfg(windows)]

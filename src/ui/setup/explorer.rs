@@ -403,22 +403,14 @@ impl SetupView {
             .map(|data| data.title().to_lowercase())
             .collect();
         let list = join_list(&names);
-        let controller = self.server.read(cx);
-        let message = if controller.connection.is_remote() {
-            format!(
-                "ricochet will be stopped while the {list} is permanently deleted from {}, then started again.",
-                controller.connection.name()
-            )
+        let bin = if cfg!(windows) {
+            "Recycle Bin"
         } else {
-            let bin = if cfg!(windows) {
-                "Recycle Bin"
-            } else {
-                "Trash"
-            };
-            format!(
-                "ricochet will be stopped while the {list} is moved to the {bin}, then started again."
-            )
+            "Trash"
         };
+        let message = format!(
+            "ricochet will be stopped while the {list} is moved to the {bin}, then started again."
+        );
         let title = format!("Delete the {list}?");
         let view = cx.entity();
         window.open_alert_dialog(cx, move |dialog, _, _| {

@@ -4,7 +4,6 @@ use std::process::Command;
 
 pub struct CommandResult {
     pub success: bool,
-    pub code: Option<i32>,
     pub stdout: String,
     pub stderr: String,
 }
@@ -40,7 +39,6 @@ pub fn run<S: AsRef<OsStr>>(
         .output()?;
     Ok(CommandResult {
         success: output.status.success(),
-        code: output.status.code(),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
     })
